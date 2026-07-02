@@ -1,0 +1,6 @@
+{
+  "name": "Boomerang",
+  "description": "Aplicación oficial del Centro de Estudiantes Boomerang del Instituto Jóvenes Argentinos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
