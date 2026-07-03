@@ -1,20 +1,23 @@
 import { useState } from 'react';
-import { 
-  initialNews, 
-  initialProposals, 
-  initialVotes, 
-  initialBono, 
-  initialDocs, 
-  initialEvents, 
-  initialTeam 
+import {
+  initialNews,
+  initialProposals,
+  initialVotes,
+  initialBono,
+  initialDocs,
+  initialEvents,
+  initialTeam,
+  initialUsers
 } from './data';
-import { 
-  NewsItem, 
-  Proposal, 
-  Vote, 
-  BonoInfo, 
-  ToastMessage, 
-  ProposalStatus 
+import {
+  NewsItem,
+  Proposal,
+  Vote,
+  BonoInfo,
+  ToastMessage,
+  ProposalStatus,
+  DocItem,
+  AuthorizedUser
 } from './types';
 
 // Components
@@ -24,22 +27,27 @@ import { ToastContainer } from './components/Toast';
 import { InicioScreen, NewsDetail } from './components/InicioScreen';
 import { PropuestasScreen } from './components/PropuestasScreen';
 import { VotacionesScreen } from './components/VotacionesScreen';
-import { BonoScreen } from './components/BonoScreen';
+import { AsistenteScreen } from './components/AsistenteScreen';
 import { MasScreen } from './components/MasScreen';
 import { AdminPanel } from './components/AdminPanel';
+import { AuthFlow } from './components/AuthFlow';
 
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 
 export default function App() {
+  // Auth State (static placeholder until Firebase Auth is wired up)
+  const [loggedInUser, setLoggedInUser] = useState<AuthorizedUser | null>(null);
+  const [users, setUsers] = useState<AuthorizedUser[]>(initialUsers);
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType | 'admin'>('inicio');
-  
+
   // App Databases in React State
   const [news, setNews] = useState<NewsItem[]>(initialNews);
   const [proposals, setProposals] = useState<Proposal[]>(initialProposals);
   const [votes, setVotes] = useState<Vote[]>(initialVotes);
   const [bonoInfo, setBonoInfo] = useState<BonoInfo>(initialBono);
-  const [documents] = useState(initialDocs);
+  const [documents, setDocuments] = useState<DocItem[]>(initialDocs);
   const [events] = useState(initialEvents);
   const [team] = useState(initialTeam);
 
@@ -213,6 +221,61 @@ export default function App() {
     setVotes(prev => [fresh, ...prev]);
   };
 
+  // 8. Add Official Document (Admin view — feeds public Documentos & the Asistente context)
+  // TODO: al conectar Firebase, subir el archivo a Firebase Storage y guardar
+  // la URL + texto extraído en Firestore
+  const handleAddDocument = (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => {
+    const fresh: DocItem = {
+      id: `doc-${Date.now()}`,
+      title,
+      fileName,
+      fileType: fileType.toUpperCase(),
+      size: fileSizeBytes > 1024 * 1024
+        ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`,
+      date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      active: true,
+      content
+    };
+    setDocuments(prev => [fresh, ...prev]);
+    showToast('Documento agregado correctamente', 'success');
+  };
+
+  // 9. Toggle Document Active State (Admin view)
+  const handleToggleDocumentActive = (id: string) => {
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, active: !d.active } : d));
+  };
+
+  // 10. Delete Document (Admin view)
+  const handleDeleteDocument = (id: string) => {
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    showToast('Documento eliminado', 'info');
+  };
+
+  // 11. Add Authorized User (Admin view)
+  const handleAddUser = (user: Omit<AuthorizedUser, 'id' | 'active'>) => {
+    const fresh: AuthorizedUser = { ...user, id: `user-${Date.now()}`, active: true };
+    setUsers(prev => [fresh, ...prev]);
+    showToast('Usuario agregado correctamente', 'success');
+  };
+
+  // 12. Toggle Authorized User Active State (Admin view)
+  const handleToggleUserActive = (id: string) => {
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, active: !u.active } : u));
+  };
+
+  // 13. Bulk Import Authorized Users from Excel/CSV (Admin view)
+  const handleImportUsers = (imported: Omit<AuthorizedUser, 'id' | 'active'>[]) => {
+    // TODO: al conectar Firebase, escribir cada usuario a Firestore colección 'usuarios_autorizados'
+    const fresh: AuthorizedUser[] = imported.map((u, idx) => ({
+      ...u,
+      id: `user-${Date.now()}-${idx}`,
+      active: true
+    }));
+    setUsers(prev => [...fresh, ...prev]);
+    showToast(`${fresh.length} usuarios importados correctamente`, 'success');
+  };
+
   return (
     <div
       id="app-root-backdrop"
@@ -234,6 +297,10 @@ export default function App() {
             </div>
           </div>
 
+          {!loggedInUser ? (
+            <AuthFlow users={users} onAuthSuccess={setLoggedInUser} />
+          ) : (
+          <>
           {/* Dynamic header per screen */}
           {activeTab === 'inicio' ? (
             <Header isHome={true} />
@@ -258,11 +325,11 @@ export default function App() {
             <Header 
               isHome={false} 
               title={{
-                propuestas: 'Propuestas del Alumnado',
+                propuestas: 'Propuestas de los Alumnos',
                 votaciones: 'Votaciones y Plebiscitos',
-                bono: 'Bono Contribución',
+                asistente: 'Asistente Virtual',
                 mas: 'Más Secciones'
-              }[activeTab]} 
+              }[activeTab]}
             />
           )}
 
@@ -290,10 +357,8 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'bono' && (
-              <BonoScreen 
-                bonoInfo={bonoInfo} 
-              />
+            {activeTab === 'asistente' && (
+              <AsistenteScreen />
             )}
 
             {activeTab === 'mas' && (
@@ -318,10 +383,11 @@ export default function App() {
                   </div>
                 )}
 
-                <MasScreen 
-                  documents={documents}
+                <MasScreen
+                  documents={documents.filter(d => d.active)}
                   events={events}
                   team={team}
+                  bonoInfo={bonoInfo}
                   isAdminMode={isAdminMode}
                   onToggleAdmin={setIsAdminMode}
                   onShowToast={showToast}
@@ -330,15 +396,23 @@ export default function App() {
             )}
 
             {activeTab === 'admin' && (
-              <AdminPanel 
+              <AdminPanel
                 proposals={proposals}
                 votes={votes}
                 news={news}
                 bonoInfo={bonoInfo}
+                documents={documents}
+                users={users}
                 onUpdateProposalStatus={handleUpdateProposalStatus}
                 onPublishNews={handlePublishNews}
                 onUpdateBonoSales={handleUpdateBonoSales}
                 onCreateVote={handleCreateVote}
+                onAddDocument={handleAddDocument}
+                onToggleDocumentActive={handleToggleDocumentActive}
+                onDeleteDocument={handleDeleteDocument}
+                onAddUser={handleAddUser}
+                onToggleUserActive={handleToggleUserActive}
+                onImportUsers={handleImportUsers}
                 onShowToast={showToast}
               />
             )}
@@ -360,11 +434,13 @@ export default function App() {
 
           {/* Nav bar */}
           {activeTab !== 'admin' && (
-            <BottomNav 
-              activeTab={activeTab} 
-              onChangeTab={(tab) => setActiveTab(tab)} 
+            <BottomNav
+              activeTab={activeTab}
+              onChangeTab={(tab) => setActiveTab(tab)}
               isAdminMode={isAdminMode}
             />
+          )}
+          </>
           )}
 
           {/* Phone Bottom notch indicator */}

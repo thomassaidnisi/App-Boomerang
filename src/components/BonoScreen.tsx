@@ -68,7 +68,7 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
   };
 
   return (
-    <div id="bono-screen-container" className="flex flex-col gap-5 p-4 animate-fade-in overflow-y-auto max-h-[calc(100vh-140px)] pb-16 bg-gray-50 scrollbar-none">
+    <div id="bono-screen-container" className="flex flex-col gap-5 p-4 animate-fade-in overflow-y-auto h-full pb-16 bg-gray-50 scrollbar-none">
       
       {/* Intro */}
       <div className="flex flex-col gap-1">
@@ -83,18 +83,18 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
       {/* HERO / TOTAL RAISED GRADIENT BLOCK */}
       <div 
         id="bono-progress-hero"
-        className="relative overflow-hidden bg-gradient-to-r from-[#CC0000] to-[#1A1A1A] rounded-2xl p-5 border border-red-100 shadow-[0_4px_16px_rgba(204,0,0,0.12)] text-white flex flex-col gap-4"
+        className="relative overflow-hidden shrink-0 bg-gradient-to-r from-[#CC0000] to-[#1A1A1A] rounded-2xl p-5 border border-red-100 shadow-[0_4px_16px_rgba(204,0,0,0.12)] text-white flex flex-col gap-4"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.1),transparent_70%)] pointer-events-none" />
 
-        <div className="flex justify-between items-center relative z-10">
-          <div className="flex items-center gap-2">
-            <div className="bg-white/15 p-1.5 rounded-xl backdrop-blur-md">
+        <div className="flex flex-col gap-2 items-start relative z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="bg-white/15 p-1.5 rounded-xl backdrop-blur-md shrink-0">
               <Ticket className="w-5 h-5 text-white" />
             </div>
-            <span className="text-[10px] font-extrabold tracking-wider text-red-200 uppercase">RECAUDACIÓN EN VIVO</span>
+            <span className="text-[10px] font-extrabold tracking-wider text-red-200 uppercase whitespace-nowrap">RECAUDACIÓN EN VIVO</span>
           </div>
-          <span className="inline-flex items-center gap-1 bg-[#CC0000] text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 bg-[#CC0000] text-white text-[9px] font-extrabold px-2 py-1 rounded-full uppercase tracking-wider leading-snug text-left">
             Objetivo: Equipo de Sonido
           </span>
         </div>

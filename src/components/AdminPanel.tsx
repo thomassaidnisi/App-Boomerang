@@ -2,22 +2,34 @@ import React, { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Proposal, Vote, NewsItem, BonoInfo, ProposalStatus } from '../types';
-import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Check, X, Megaphone, Edit3 } from 'lucide-react';
+import { Proposal, Vote, NewsItem, BonoInfo, ProposalStatus, DocItem, AuthorizedUser, UserRole } from '../types';
+import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Check, X, Megaphone, Edit3, FilePlus2, Users, Search, FileSpreadsheet, Upload, File as FileIcon, Loader2 } from 'lucide-react';
+import { ImportUsersDialog } from './ImportUsersDialog';
+import { extractTextFromFile, ExtractedFileType } from '../lib/fileTextExtractor';
 
 interface AdminPanelProps {
   proposals: Proposal[];
   votes: Vote[];
   news: NewsItem[];
   bonoInfo: BonoInfo;
+  documents: DocItem[];
+  users: AuthorizedUser[];
   onUpdateProposalStatus: (id: string, status: ProposalStatus, responseText?: string) => void;
   onPublishNews: (newsItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => void;
   onUpdateBonoSales: (course: string, sales: number) => void;
   onCreateVote: (question: string, options: string[], expiresDays: number) => void;
+  onAddDocument: (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => void;
+  onToggleDocumentActive: (id: string) => void;
+  onDeleteDocument: (id: string) => void;
+  onAddUser: (user: Omit<AuthorizedUser, 'id' | 'active'>) => void;
+  onToggleUserActive: (id: string) => void;
+  onImportUsers: (users: Omit<AuthorizedUser, 'id' | 'active'>[]) => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
 
-type AdminSubTab = 'stats' | 'proposals' | 'news' | 'bono' | 'vote';
+type AdminSubTab = 'stats' | 'proposals' | 'news' | 'bono' | 'vote' | 'docs' | 'users';
+
+const COURSE_OPTIONS = ['1°A', '1°B', '2°A', '2°B', '3°A', '3°B', '4°A', '4°B', '5°A', '5°B', '6°A', '6°B'];
 
 // Zod schemas for forms
 const newsSchema = z.object({
@@ -25,6 +37,17 @@ const newsSchema = z.object({
   description: z.string().min(10, 'Mínimo 10 caracteres').max(150, 'Máximo 150 caracteres'),
   content: z.string().min(20, 'Mínimo 20 caracteres'),
   image: z.string().url('Ingresá una URL de imagen válida (ej: Unsplash)'),
+});
+
+const docSchema = z.object({
+  title: z.string().min(5, 'Mínimo 5 caracteres').max(80, 'Máximo 80 caracteres'),
+});
+
+const userSchema = z.object({
+  email: z.string().email('Ingresá un email válido'),
+  name: z.string().min(3, 'Mínimo 3 caracteres'),
+  role: z.enum(['Estudiante', 'Docente', 'Admin']),
+  course: z.string().optional(),
 });
 
 const voteSchema = z.object({
@@ -40,15 +63,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   votes,
   news,
   bonoInfo,
+  documents,
+  users,
   onUpdateProposalStatus,
   onPublishNews,
   onUpdateBonoSales,
   onCreateVote,
+  onAddDocument,
+  onToggleDocumentActive,
+  onDeleteDocument,
+  onAddUser,
+  onToggleUserActive,
+  onImportUsers,
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminSubTab>('stats');
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [responseInput, setResponseInput] = useState('');
+  const [showDocForm, setShowDocForm] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docFileType, setDocFileType] = useState<ExtractedFileType | null>(null);
+  const [docExtractedContent, setDocExtractedContent] = useState('');
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+  const [docFileError, setDocFileError] = useState('');
+  const [isDocDragging, setIsDocDragging] = useState(false);
 
   // 1. Publish News Form Setup
   const {
@@ -105,6 +146,90 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     resetVote();
   };
 
+  // 2b. Add Official Document Form Setup
+  const {
+    register: regDoc,
+    handleSubmit: handleSubDoc,
+    reset: resetDoc,
+    formState: { errors: errorsDoc }
+  } = useForm({
+    resolver: zodResolver(docSchema),
+    defaultValues: {
+      title: ''
+    }
+  });
+
+  const resetDocFileState = () => {
+    setDocFile(null);
+    setDocFileType(null);
+    setDocExtractedContent('');
+    setDocFileError('');
+  };
+
+  const handleDocFileSelected = async (file: File) => {
+    setDocFileError('');
+    setDocFile(file);
+    setIsExtractingDoc(true);
+    try {
+      const { fileType, content } = await extractTextFromFile(file);
+      setDocFileType(fileType);
+      setDocExtractedContent(content);
+    } catch (err: any) {
+      setDocFile(null);
+      setDocFileType(null);
+      setDocExtractedContent('');
+      setDocFileError(err.message || 'No se pudo leer el archivo.');
+    } finally {
+      setIsExtractingDoc(false);
+    }
+  };
+
+  const onSubmitDoc = (data: any) => {
+    if (!docFile || !docFileType || !docExtractedContent) {
+      setDocFileError('Subí un archivo PDF, DOCX o TXT para continuar.');
+      return;
+    }
+    onAddDocument(data.title, docFile.name, docFileType, docExtractedContent, docFile.size);
+    resetDoc();
+    resetDocFileState();
+    setShowDocForm(false);
+  };
+
+  // 2c. Add Authorized User Form Setup
+  const {
+    register: regUser,
+    handleSubmit: handleSubUser,
+    reset: resetUser,
+    watch: watchUser,
+    formState: { errors: errorsUser }
+  } = useForm({
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      email: '',
+      name: '',
+      role: 'Estudiante' as UserRole,
+      course: COURSE_OPTIONS[0]
+    }
+  });
+
+  const watchedRole = watchUser('role');
+
+  const onSubmitUser = (data: any) => {
+    onAddUser({
+      email: data.email,
+      name: data.name,
+      role: data.role,
+      course: data.role === 'Estudiante' ? data.course : undefined
+    });
+    resetUser();
+    setShowUserForm(false);
+  };
+
+  const filteredUsers = users.filter(u =>
+    u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+    u.name.toLowerCase().includes(userSearch.toLowerCase())
+  );
+
   // 3. Update Bono Sales local handler
   const [bonoSalesInputs, setBonoSalesInputs] = useState<{ [key: string]: number }>(
     bonoInfo.courseSales.reduce((acc, curr) => ({ ...acc, [curr.course]: curr.sales }), {})
@@ -124,7 +249,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const percentRaised = Math.min(Math.round((bonoInfo.totalRaised / bonoInfo.goal) * 100), 100);
 
   return (
-    <div id="admin-panel-container" className="flex flex-col h-[calc(100vh-140px)] animate-fade-in bg-gray-50 text-neutral-800">
+    <div id="admin-panel-container" className="relative flex flex-col h-[calc(100vh-140px)] animate-fade-in bg-gray-50 text-neutral-800">
       
       {/* Sub-Tabs Selector */}
       <div className="flex gap-1.5 overflow-x-auto bg-white px-3 py-2 border-b border-gray-100 scrollbar-none shrink-0 shadow-sm">
@@ -134,6 +259,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           { id: 'news', label: 'Noticias', icon: Newspaper },
           { id: 'bono', label: 'Bono', icon: BarChart2 },
           { id: 'vote', label: 'Crear Voto', icon: CheckSquare },
+          { id: 'docs', label: 'Documentos', icon: FilePlus2 },
+          { id: 'users', label: 'Usuarios', icon: Users },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -582,7 +709,359 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
 
+        {/* TAB 6: OFFICIAL DOCUMENTS (feeds the Asistente Boomerang context) */}
+        {activeTab === 'docs' && (
+          <div id="admin-docs-view" className="flex flex-col gap-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-1">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest">
+                Documentos Oficiales
+              </h4>
+              <button
+                id="btn-toggle-doc-form"
+                onClick={() => {
+                  if (showDocForm) {
+                    resetDoc();
+                    resetDocFileState();
+                  }
+                  setShowDocForm(prev => !prev);
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+              >
+                {showDocForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {showDocForm ? 'Cancelar' : 'Agregar documento'}
+              </button>
+            </div>
+
+            <p className="text-[11px] text-gray-400 leading-relaxed -mt-2">
+              Solo los documentos <strong>activos</strong> se muestran en la sección pública "Documentos" y se usan como contexto del Asistente Boomerang.
+            </p>
+
+            {/* Add Document Form */}
+            {showDocForm && (
+              <form onSubmit={handleSubDoc(onSubmitDoc)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre del documento</label>
+                  <input
+                    id="doc-title-input"
+                    type="text"
+                    placeholder="Ej: Reglamento de Uso de Laboratorios"
+                    {...regDoc('title')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsDoc.title && (
+                    <span className="text-[10px] text-[#CC0000] font-bold">{errorsDoc.title.message}</span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Archivo del documento</label>
+
+                  {!docFile ? (
+                    <label
+                      id="doc-file-dropzone"
+                      onDragOver={(e) => { e.preventDefault(); setIsDocDragging(true); }}
+                      onDragLeave={() => setIsDocDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDocDragging(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) handleDocFileSelected(file);
+                      }}
+                      className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl px-4 py-6 cursor-pointer transition-colors ${
+                        isDocDragging ? 'border-[#CC0000] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      <Upload className="w-5 h-5 text-gray-400" />
+                      <span className="text-xs font-bold text-neutral-600 text-center">
+                        Arrastrá tu archivo acá o hacé click para elegirlo
+                      </span>
+                      <span className="text-[9px] text-gray-400 font-mono">PDF · DOCX · TXT</span>
+                      <input
+                        id="doc-file-input"
+                        type="file"
+                        accept=".pdf,.docx,.txt"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleDocFileSelected(file);
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                      <div className={`p-2 rounded-lg shrink-0 ${
+                        docFileType === 'pdf' ? 'bg-red-50 text-[#CC0000]' :
+                        docFileType === 'docx' ? 'bg-blue-50 text-blue-600' :
+                        'bg-gray-100 text-gray-500'
+                      }`}>
+                        <FileIcon className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 flex flex-col min-w-0">
+                        <span className="text-xs font-bold text-neutral-800 truncate">{docFile.name}</span>
+                        <span className="text-[10px] font-mono text-gray-400">
+                          {(docFile.size / 1024).toFixed(0)} KB
+                          {isExtractingDoc && ' · Extrayendo texto...'}
+                          {!isExtractingDoc && docExtractedContent && ' · Texto extraído ✓'}
+                        </span>
+                      </div>
+                      {isExtractingDoc ? (
+                        <Loader2 className="w-4 h-4 text-gray-400 animate-spin shrink-0" />
+                      ) : (
+                        <button
+                          type="button"
+                          id="btn-remove-doc-file"
+                          onClick={resetDocFileState}
+                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {docFileError && (
+                    <span className="text-[10px] text-[#CC0000] font-bold">{docFileError}</span>
+                  )}
+                </div>
+
+                <button
+                  id="btn-doc-submit"
+                  type="submit"
+                  disabled={isExtractingDoc}
+                  className="bg-[#CC0000] hover:bg-red-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <FilePlus2 className="w-4 h-4" />
+                  Guardar Documento
+                </button>
+              </form>
+            )}
+
+            {/* Document List */}
+            {documents.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">No hay documentos cargados todavía.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    id={`admin-doc-card-${doc.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className={`p-2.5 rounded-xl shrink-0 ${doc.active ? 'bg-red-50 text-[#CC0000]' : 'bg-gray-50 text-gray-300'}`}>
+                      <FileText className="w-4 h-4" />
+                    </div>
+
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className={`text-xs font-bold leading-tight truncate ${doc.active ? 'text-neutral-800' : 'text-gray-400'}`}>
+                        {doc.title}
+                      </span>
+                      <span className="text-[9px] font-mono text-gray-400">
+                        {doc.fileType} • {doc.size} • {doc.date}
+                      </span>
+                      <span className={`text-[9px] font-extrabold uppercase tracking-wider mt-0.5 ${doc.active ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        {doc.active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </div>
+
+                    {/* Active toggle */}
+                    <button
+                      id={`btn-toggle-doc-${doc.id}`}
+                      onClick={() => onToggleDocumentActive(doc.id)}
+                      title={doc.active ? 'Desactivar' : 'Activar'}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        doc.active ? 'bg-[#CC0000]' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          doc.active ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+
+                    {/* Delete */}
+                    <button
+                      id={`btn-delete-doc-${doc.id}`}
+                      onClick={() => onDeleteDocument(doc.id)}
+                      title="Eliminar documento"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 7: AUTHORIZED USERS */}
+        {activeTab === 'users' && (
+          <div id="admin-users-view" className="flex flex-col gap-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-1">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest">
+                Usuarios Autorizados
+              </h4>
+              <div className="flex items-center gap-3">
+                <button
+                  id="btn-open-import-dialog"
+                  onClick={() => setShowImportDialog(true)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Importar desde Excel
+                </button>
+                <button
+                  id="btn-toggle-user-form"
+                  onClick={() => setShowUserForm(prev => !prev)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+                >
+                  {showUserForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                  {showUserForm ? 'Cancelar' : 'Agregar usuario'}
+                </button>
+              </div>
+            </div>
+
+            {/* TODO: al conectar Firebase, verificar en Firestore colección
+                'usuarios_autorizados' si el email logueado existe y está activo=true */}
+
+            {/* Add User Form */}
+            {showUserForm && (
+              <form onSubmit={handleSubUser(onSubmitUser)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Email</label>
+                  <input
+                    id="user-email-input"
+                    type="email"
+                    placeholder="nombre.apellido@ija.edu.ar"
+                    {...regUser('email')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsUser.email && (
+                    <span className="text-[10px] text-[#CC0000] font-bold">{errorsUser.email.message}</span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre completo</label>
+                  <input
+                    id="user-name-input"
+                    type="text"
+                    placeholder="Ej: Ana Martínez"
+                    {...regUser('name')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsUser.name && (
+                    <span className="text-[10px] text-[#CC0000] font-bold">{errorsUser.name.message}</span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Tipo de usuario</label>
+                  <select
+                    id="user-role-select"
+                    {...regUser('role')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] shadow-sm cursor-pointer"
+                  >
+                    <option value="Estudiante">Estudiante</option>
+                    <option value="Docente">Docente</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+
+                {watchedRole === 'Estudiante' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Curso</label>
+                    <select
+                      id="user-course-select"
+                      {...regUser('course')}
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] shadow-sm cursor-pointer"
+                    >
+                      {COURSE_OPTIONS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  id="btn-user-submit"
+                  type="submit"
+                  className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <Users className="w-4 h-4" />
+                  Guardar Usuario
+                </button>
+              </form>
+            )}
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="user-search-input"
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Buscar por email o nombre..."
+                className="w-full bg-white border border-gray-100 rounded-xl pl-9 pr-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+              />
+            </div>
+
+            {/* User List */}
+            {filteredUsers.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">No se encontraron usuarios.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {filteredUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    id={`admin-user-card-${u.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className={`p-2.5 rounded-xl shrink-0 ${u.active ? 'bg-red-50 text-[#CC0000]' : 'bg-gray-50 text-gray-300'}`}>
+                      <Users className="w-4 h-4" />
+                    </div>
+
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className={`text-xs font-bold leading-tight truncate ${u.active ? 'text-neutral-800' : 'text-gray-400'}`}>
+                        {u.name}
+                      </span>
+                      <span className="text-[9px] font-mono text-gray-400 truncate">{u.email}</span>
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-gray-400 mt-0.5">
+                        {u.role}{u.course ? ` • ${u.course}` : ''} · <span className={u.active ? 'text-emerald-600' : 'text-gray-400'}>{u.active ? 'Activo' : 'Inactivo'}</span>
+                      </span>
+                    </div>
+
+                    <button
+                      id={`btn-toggle-user-${u.id}`}
+                      onClick={() => onToggleUserActive(u.id)}
+                      title={u.active ? 'Desactivar' : 'Activar'}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        u.active ? 'bg-[#CC0000]' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          u.active ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
+
+      {showImportDialog && (
+        <ImportUsersDialog
+          onImportUsers={onImportUsers}
+          onClose={() => setShowImportDialog(false)}
+        />
+      )}
     </div>
   );
 };

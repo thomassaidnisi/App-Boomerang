@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import logoSrc from '../assets/logo.png';
 
 interface HeaderProps {
   showBack?: boolean;
@@ -9,22 +10,11 @@ interface HeaderProps {
 }
 
 export const BoomerangLogo: React.FC<{ className?: string }> = ({ className = "w-8 h-8" }) => (
-  <svg 
-    className={`${className} text-white transform -rotate-12 transition-transform hover:rotate-12 duration-500`} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="3" 
-    strokeLinecap="round" 
-    strokeLinejoin="round"
-  >
-    {/* High fidelity boomerang silhouette */}
-    <path 
-      d="M3 21c5-8 11-11 18-9L19 3C11 3 5 8 3 21z" 
-      fill="currentColor" 
-      fillOpacity="0.15"
-    />
-  </svg>
+  <img
+    src={logoSrc}
+    alt="Boomerang"
+    className={`${className} object-contain`}
+  />
 );
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -52,8 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
                 {title}
               </h1>
             </div>
-            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 backdrop-blur-md shadow-sm transform rotate-12 hover:rotate-0 transition-transform duration-300">
-              <BoomerangLogo className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1.5 border border-white/10 shadow-sm">
+              <BoomerangLogo className="w-full h-full" />
             </div>
           </div>
           <p className="text-xs font-medium text-red-100/90 italic tracking-wide pl-0.5">
@@ -66,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
               Estudiantes Activos
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-[#CC0000]/60 border border-[#CC0000]/30 text-white">
-              IJA Córdoba
+              Instituto Jóvenes Argentinos
             </span>
           </div>
         </div>
@@ -89,8 +79,8 @@ export const Header: React.FC<HeaderProps> = ({
             <ArrowLeft className="w-5 h-5" />
           </button>
         ) : (
-          <div className="bg-[#CC0000] p-1.5 rounded-lg">
-            <BoomerangLogo className="w-5 h-5 text-white" />
+          <div className="bg-white p-1 rounded-lg shadow-sm">
+            <BoomerangLogo className="w-5 h-5" />
           </div>
         )}
         <h2 className="text-lg font-bold tracking-tight">

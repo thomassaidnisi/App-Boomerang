@@ -1,78 +1,30 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { DocItem, EventItem, TeamMember, ChatMessage } from '../types';
-import { getAssistantReply } from '../data';
-import { FileText, Calendar, Users, MessageSquare, ChevronRight, ArrowLeft, Download, Shield, ShieldCheck, MapPin, Clock, Send, Bot } from 'lucide-react';
+import React, { useState } from 'react';
+import { DocItem, EventItem, TeamMember, BonoInfo } from '../types';
+import { FileText, Calendar, Users, Ticket, ChevronRight, ArrowLeft, Download, Shield, ShieldCheck, MapPin, Clock } from 'lucide-react';
+import { BonoScreen } from './BonoScreen';
 
 interface MasScreenProps {
   documents: DocItem[];
   events: EventItem[];
   team: TeamMember[];
+  bonoInfo: BonoInfo;
   isAdminMode: boolean;
   onToggleAdmin: (val: boolean) => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
 
-type SubSection = 'menu' | 'documentos' | 'agenda' | 'nosotros' | 'asistente';
+type SubSection = 'menu' | 'documentos' | 'agenda' | 'nosotros' | 'bono';
 
 export const MasScreen: React.FC<MasScreenProps> = ({
   documents,
   events,
   team,
+  bonoInfo,
   isAdminMode,
   onToggleAdmin,
   onShowToast,
 }) => {
   const [activeSection, setActiveSection] = useState<SubSection>('menu');
-  
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-init',
-      sender: 'bot',
-      text: '¡Hola! Soy el Asistente Virtual Boomerang 🪃. Estoy para ayudarte con cualquier duda sobre el Centro de Estudiantes del IJA. ¿Querés saber sobre el bono contribución, cómo proponer ideas o la Estudiantina 2026?',
-      timestamp: 'Ahora'
-    }
-  ]);
-  const [userInput, setUserInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    if (activeSection === 'asistente' && chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatMessages, isTyping, activeSection]);
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userInput.trim()) return;
-
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'user',
-      text: userInput.trim(),
-      timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setChatMessages(prev => [...prev, userMsg]);
-    const originalInput = userInput.trim();
-    setUserInput('');
-    setIsTyping(true);
-
-    // Simulate typing delay
-    setTimeout(() => {
-      const replyText = getAssistantReply(originalInput);
-      const botMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
-        sender: 'bot',
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-      };
-      setChatMessages(prev => [...prev, botMsg]);
-      setIsTyping(false);
-    }, 1200);
-  };
 
   const handleDownloadDoc = (doc: DocItem) => {
     onShowToast(`Descargando "${doc.title}"...`, 'success');
@@ -88,7 +40,7 @@ export const MasScreen: React.FC<MasScreenProps> = ({
             Más Secciones
           </h3>
           <p className="text-xs text-gray-500 leading-relaxed">
-            Explorá los documentos oficiales, enterate de los próximos eventos, conocé a tus representantes o chateá con nuestro asistente.
+            Explorá los documentos oficiales, enterate de los próximos eventos, conocé a tus representantes o el estado del bono contribución.
           </p>
         </div>
 
@@ -155,21 +107,21 @@ export const MasScreen: React.FC<MasScreenProps> = ({
             <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-[#CC0000] transition-colors" />
           </button>
 
-          {/* Card 4: Asistente */}
+          {/* Card 4: Bono Contribución */}
           <button
-            id="btn-menu-asistente"
-            onClick={() => setActiveSection('asistente')}
+            id="btn-menu-bono"
+            onClick={() => setActiveSection('bono')}
             className="flex items-center gap-4 p-4 rounded-2xl bg-white border border-gray-100 hover:border-red-100 text-left transition-all cursor-pointer shadow-sm group"
           >
             <div className="bg-red-50 p-2.5 rounded-xl text-[#CC0000] group-hover:scale-105 transition-transform">
-              <MessageSquare className="w-5 h-5 text-[#CC0000]" />
+              <Ticket className="w-5 h-5 text-[#CC0000]" />
             </div>
             <div className="flex-1">
               <h4 className="text-xs font-bold text-neutral-800 group-hover:text-[#CC0000] transition-colors uppercase tracking-wider">
-                Asistente Boomerang
+                Bono Contribución
               </h4>
               <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-                Chateá con nuestro bot automatizado para resolver dudas.
+                Sorteos, premios y ranking de ventas por curso.
               </p>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-[#CC0000] transition-colors" />
@@ -379,91 +331,24 @@ export const MasScreen: React.FC<MasScreenProps> = ({
     );
   }
 
-  // 4. Asistente Virtual Sub-View (Chat UI)
+  // 4. Bono Contribución Sub-View
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] animate-fade-in bg-gray-50">
-      {/* Chat header */}
-      <div className="px-4 py-3 bg-white border-b border-gray-100 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <button
-            id="btn-back-chat"
-            onClick={() => setActiveSection('menu')}
-            className="p-1.5 rounded-xl bg-gray-50 hover:bg-red-50 hover:text-[#CC0000] text-neutral-700 transition-colors cursor-pointer border border-gray-100"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="relative">
-            <div className="bg-[#CC0000] p-1.5 rounded-xl text-white">
-              <Bot className="w-4 h-4 text-white" />
-            </div>
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white animate-pulse" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-neutral-800">Asistente Boomerang</span>
-            <span className="text-[9px] text-emerald-600 font-extrabold font-mono leading-none">Conectado</span>
-          </div>
-        </div>
-        <span className="text-[9px] text-gray-400 font-mono uppercase bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">BOT CHAT</span>
-      </div>
-
-      {/* Messages Scrollable Panel */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 scrollbar-none">
-        {chatMessages.map((msg) => {
-          const isUser = msg.sender === 'user';
-          return (
-            <div
-              key={msg.id}
-              id={`chat-msg-${msg.id}`}
-              className={`flex flex-col max-w-[80%] gap-1 ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
-            >
-              <div 
-                className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                  isUser 
-                    ? 'bg-[#CC0000] text-white rounded-tr-none shadow-[0_2px_8px_rgba(204,0,0,0.2)]' 
-                    : 'bg-white text-neutral-800 rounded-tl-none border border-gray-100 shadow-sm'
-                }`}
-              >
-                {msg.text}
-              </div>
-              <span className="text-[8px] text-gray-400 font-mono px-1">
-                {msg.timestamp}
-              </span>
-            </div>
-          );
-        })}
-
-        {/* Triple Dot Typing Indicator */}
-        {isTyping && (
-          <div id="bot-typing-indicator" className="flex flex-col max-w-[80%] gap-1 self-start items-start">
-            <div className="bg-white text-gray-400 rounded-2xl rounded-tl-none border border-gray-100 p-3 px-4 flex items-center gap-1 shadow-sm">
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* Input Form Footer */}
-      <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-gray-100 flex gap-2 shadow-inner">
-        <input
-          id="chat-user-input"
-          type="text"
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          placeholder="Preguntame sobre el bono, propuestas..."
-          className="flex-1 bg-gray-50 border border-gray-100 focus:border-[#CC0000] focus:bg-white rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none placeholder-gray-400 transition-all"
-        />
+      {/* Back header */}
+      <div className="px-4 py-3 bg-white border-b border-gray-100 flex items-center gap-3 shadow-sm">
         <button
-          id="btn-chat-send"
-          type="submit"
-          className="bg-[#CC0000] hover:bg-red-700 p-2.5 rounded-xl text-white transition-all flex items-center justify-center cursor-pointer border border-[#CC0000] shadow-[0_2px_8px_rgba(204,0,0,0.15)] shrink-0"
-          title="Enviar consulta"
+          id="btn-back-bono"
+          onClick={() => setActiveSection('menu')}
+          className="p-1.5 rounded-xl bg-gray-50 hover:bg-red-50 hover:text-[#CC0000] text-neutral-700 transition-colors cursor-pointer border border-gray-100"
         >
-          <Send className="w-4 h-4 text-white" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
-      </form>
+        <span className="text-xs font-extrabold tracking-wider uppercase text-[#1A1A1A]">Bono Contribución</span>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        <BonoScreen bonoInfo={bonoInfo} />
+      </div>
     </div>
   );
 };

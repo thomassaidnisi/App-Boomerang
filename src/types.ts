@@ -69,9 +69,12 @@ export interface BonoInfo {
 export interface DocItem {
   id: string;
   title: string;
+  fileName: string;
   fileType: string;
   size: string;
   date: string;
+  content: string;
+  active: boolean;
 }
 
 export interface EventItem {
@@ -95,6 +98,17 @@ export interface ChatMessage {
   sender: 'user' | 'bot';
   text: string;
   timestamp: string;
+}
+
+export type UserRole = 'Estudiante' | 'Docente' | 'Admin';
+
+export interface AuthorizedUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  course?: string;
+  active: boolean;
 }
 
 export interface ToastMessage {

@@ -1,4 +1,4 @@
-import { NewsItem, Proposal, Vote, BonoInfo, DocItem, EventItem, TeamMember } from './types';
+import { NewsItem, Proposal, Vote, BonoInfo, DocItem, EventItem, TeamMember, AuthorizedUser } from './types';
 
 export const initialNews: NewsItem[] = [
   {
@@ -236,23 +236,78 @@ export const initialDocs: DocItem[] = [
   {
     id: 'doc-1',
     title: 'Estatuto del Centro de Estudiantes Boomerang.pdf',
+    fileName: 'Estatuto del Centro de Estudiantes Boomerang.pdf',
     fileType: 'PDF',
     size: '1.4 MB',
-    date: '12 de Abril, 2026'
+    date: '12 de Abril, 2026',
+    active: true,
+    content: 'Estatuto fundacional del Centro de Estudiantes Boomerang. Define la misión, los órganos de gobierno (Mesa Directiva, Asamblea de Delegados), el mecanismo de elección anual por lista y los derechos y deberes de los estudiantes afiliados.'
   },
   {
     id: 'doc-2',
     title: 'Balance General Semestral Jun2026 - Finanzas CEC.pdf',
+    fileName: 'Balance General Semestral Jun2026 - Finanzas CEC.pdf',
     fileType: 'PDF',
     size: '890 KB',
-    date: '25 de Junio, 2026'
+    date: '25 de Junio, 2026',
+    active: true,
+    content: 'Balance de ingresos y egresos del primer semestre 2026. Incluye lo recaudado por el Bono Contribución, gastos en equipamiento de sonido y el remanente disponible para el segundo semestre.'
   },
   {
     id: 'doc-3',
     title: 'Reglamento y Código de Conducta Torneos IJA.pdf',
+    fileName: 'Reglamento y Código de Conducta Torneos IJA.pdf',
     fileType: 'PDF',
     size: '512 KB',
-    date: '22 de Junio, 2026'
+    date: '22 de Junio, 2026',
+    active: true,
+    content: 'Reglamento de los torneos intercursos organizados por el CEC. Establece las normas de juego limpio, criterios de descalificación y el sistema de puntaje para la copa anual.'
+  },
+  {
+    id: 'doc-4',
+    title: 'Acuerdo de Convivencia — Uso del Mate en Aula',
+    fileName: 'acuerdo_convivencia_mate.txt',
+    fileType: 'TXT',
+    size: '3 KB',
+    date: '18 de Junio, 2026',
+    active: true,
+    content: `ACUERDO DE CONVIVENCIA: USO DEL MATE EN EL AULA
+
+1. Se permite el uso del mate durante las horas de clase siempre que no interfiera con el dictado normal de la materia ni genere derrames o accidentes con el agua caliente.
+
+2. El termo debe mantenerse cerrado sobre el banco, evitando apoyarlo cerca de netbooks, celulares o material escolar de compañeros.
+
+3. Queda prohibido cebar mate durante evaluaciones escritas u orales, salvo autorización expresa del docente a cargo.
+
+4. Cada estudiante es responsable de la limpieza de su espacio: no se debe dejar yerba, bombillas ni restos de agua en el aula al finalizar la clase.
+
+5. Ante quejas reiteradas de un docente por mal uso de este acuerdo, el CEC podrá mediar entre las partes para restablecer las condiciones de convivencia.
+
+Este acuerdo fue elaborado en conjunto entre la Mesa Directiva Boomerang y el cuerpo docente del IJA, y podrá actualizarse según el consenso de la comunidad educativa.`
+  },
+  {
+    id: 'doc-5',
+    title: 'Reglamento Interno del CEC',
+    fileName: 'reglamento_interno_cec.txt',
+    fileType: 'TXT',
+    size: '4 KB',
+    date: '10 de Junio, 2026',
+    active: true,
+    content: `REGLAMENTO INTERNO DEL CENTRO DE ESTUDIANTES BOOMERANG
+
+1. COMPOSICIÓN: El CEC está integrado por la Mesa Directiva (Presidencia, Secretaría, Tesorería y Vocalías) y delegados electos por curso.
+
+2. REUNIONES: La Mesa Directiva se reúne semanalmente los miércoles al finalizar el horario escolar. Las decisiones se toman por mayoría simple de los presentes.
+
+3. PROPUESTAS ESTUDIANTILES: Toda propuesta enviada a través de la app pasa por los estados "Recibida", "En análisis", "En el CEC" y "Resuelta" o "Archivada". El CEC se compromete a responder en un plazo máximo de 15 días hábiles.
+
+4. FONDOS: Los fondos recaudados mediante el Bono Contribución y otras actividades se destinan exclusivamente a mejoras de infraestructura, equipamiento y eventos estudiantiles, y se rinden semestralmente mediante balance público.
+
+5. VOTACIONES Y PLEBISCITOS: Las consultas generales al alumnado (plebiscitos) se habilitan por un período definido y sus resultados son vinculantes para las decisiones que estén dentro de la órbita del CEC.
+
+6. REVOCATORIA: La Mesa Directiva puede ser removida de su cargo mediante una moción de censura aprobada por dos tercios de los delegados de curso en Asamblea extraordinaria.
+
+Este reglamento fue aprobado en Asamblea General y rige el funcionamiento cotidiano del Centro de Estudiantes Boomerang del Instituto Jóvenes Argentinos.`
   }
 ];
 
@@ -350,6 +405,16 @@ export const assistantReplies: { keywords: string[]; text: string }[] = [
     keywords: ['hola', 'buen', 'como andas', 'ayuda'],
     text: '¡Hola! Soy el Asistente Virtual Boomerang 🪃. Estoy acá para responder tus consultas sobre el Centro de Estudiantes de IJA. Preguntame sobre el bono, las propuestas, los torneos o la Estudiantina.'
   }
+];
+
+export const initialUsers: AuthorizedUser[] = [
+  { id: 'user-1', email: 'sofia.gomez@ija.edu.ar', name: 'Sofía Gómez', role: 'Estudiante', course: '5°A', active: true },
+  { id: 'user-2', email: 'lucas.perez@ija.edu.ar', name: 'Lucas Pérez', role: 'Estudiante', course: '6°B', active: true },
+  { id: 'user-3', email: 'martina.diaz@ija.edu.ar', name: 'Martina Díaz', role: 'Estudiante', course: '4°A', active: false },
+  { id: 'user-4', email: 'prof.rodriguez@ija.edu.ar', name: 'Prof. Carlos Rodríguez', role: 'Docente', active: true },
+  { id: 'user-5', email: 'directiva.cec@ija.edu.ar', name: 'Mesa Directiva CEC', role: 'Admin', active: true },
+  { id: 'user-6', email: 'juan.fernandez@ija.edu.ar', name: 'Juan Fernández', role: 'Estudiante', course: '2°B', active: true },
+  { id: 'user-7', email: 'thomassaidnisi@gmail.com', name: 'Thomas Said Nisi', role: 'Admin', active: true },
 ];
 
 export function getAssistantReply(userInput: string): string {
