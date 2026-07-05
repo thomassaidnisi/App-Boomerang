@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from './lib/firebase';
+import { useAuth } from './hooks/useAuth';
 import {
   initialNews,
   initialProposals,
@@ -35,9 +38,13 @@ import { AuthFlow } from './components/AuthFlow';
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 
 export default function App() {
-  // Auth State (static placeholder until Firebase Auth is wired up)
-  const [loggedInUser, setLoggedInUser] = useState<AuthorizedUser | null>(null);
+  // Auth State (Firebase Auth + Firestore whitelist check)
+  const { authorizedUser, loading: authLoading, isAdmin: isFirestoreAdmin } = useAuth();
   const [users, setUsers] = useState<AuthorizedUser[]>(initialUsers);
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType | 'admin'>('inicio');
@@ -297,8 +304,12 @@ export default function App() {
             </div>
           </div>
 
-          {!loggedInUser ? (
-            <AuthFlow users={users} onAuthSuccess={setLoggedInUser} />
+          {authLoading ? (
+            <div className="flex items-center justify-center h-full bg-white">
+              <span className="text-xs font-bold text-gray-400 animate-pulse">Cargando...</span>
+            </div>
+          ) : !authorizedUser ? (
+            <AuthFlow />
           ) : (
           <>
           {/* Dynamic header per screen */}
@@ -391,11 +402,13 @@ export default function App() {
                   isAdminMode={isAdminMode}
                   onToggleAdmin={setIsAdminMode}
                   onShowToast={showToast}
+                  onLogout={handleLogout}
+                  canAccessAdmin={isFirestoreAdmin}
                 />
               </div>
             )}
 
-            {activeTab === 'admin' && (
+            {activeTab === 'admin' && isFirestoreAdmin && (
               <AdminPanel
                 proposals={proposals}
                 votes={votes}

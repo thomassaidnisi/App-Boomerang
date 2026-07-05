@@ -1,62 +1,113 @@
 import React, { useState } from 'react';
-import { AuthorizedUser, UserRole } from '../types';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import { LoginScreen } from './LoginScreen';
 import { RegisterScreen } from './RegisterScreen';
 import { AccessDeniedScreen } from './AccessDeniedScreen';
 
-interface AuthFlowProps {
-  users: AuthorizedUser[];
-  onAuthSuccess: (user: AuthorizedUser) => void;
-}
-
 type AuthView = 'login' | 'register' | 'denied';
 
-export const AuthFlow: React.FC<AuthFlowProps> = ({ users, onAuthSuccess }) => {
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+  'auth/invalid-credential': 'Email o contraseña incorrectos',
+  'auth/too-many-requests': 'Demasiados intentos, esperá unos minutos',
+  'auth/user-disabled': 'Tu cuenta fue desactivada',
+};
+
+export const AuthFlow: React.FC = () => {
   const [view, setView] = useState<AuthView>('login');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // TODO: reemplazar whitelist mock por consulta a Firestore colección
-  // 'usuarios_autorizados' y crear cuenta con Firebase Auth email/password
-  const findAuthorizedUser = (email: string) =>
-    users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
-
-  const handleLogin = (email: string, _password: string) => {
-    const match = findAuthorizedUser(email);
-    if (match && match.active) {
-      onAuthSuccess(match);
-    } else {
-      setView('denied');
+  const handleLogin = async (email: string, password: string) => {
+    setErrorMessage('');
+    setIsSubmitting(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      // useAuth (App.tsx) recoge la sesión vía onAuthStateChanged a partir de acá.
+    } catch (err: any) {
+      setErrorMessage(LOGIN_ERROR_MESSAGES[err.code] || 'No se pudo iniciar sesión. Intentá de nuevo.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleRegister = (data: {
+  const handleRegister = async (data: {
     firstName: string;
     lastName: string;
     email: string;
+    password: string;
     course: string;
     division: string;
     type: 'Estudiante' | 'Docente';
   }) => {
-    const match = findAuthorizedUser(data.email);
+    setErrorMessage('');
+    setIsSubmitting(true);
+    const normalizedEmail = data.email.trim().toLowerCase();
 
-    if (match && match.active) {
-      onAuthSuccess({
-        ...match,
-        name: `${data.firstName} ${data.lastName}`,
-        role: data.type as UserRole,
-        course: data.type === 'Estudiante' ? `${data.course}°${data.division}` : undefined,
+    try {
+      // 1. Verificar whitelist en Firestore antes de crear la cuenta
+      const usersRef = collection(db, 'usuarios_autorizados');
+      const whitelistQuery = query(
+        usersRef,
+        where('email', '==', normalizedEmail),
+        where('active', '==', true)
+      );
+      const snapshot = await getDocs(whitelistQuery);
+
+      if (snapshot.empty) {
+        setIsSubmitting(false);
+        setView('denied');
+        return;
+      }
+
+      // 2. Crear la cuenta en Firebase Auth
+      const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, data.password);
+
+      // 3. Guardar el perfil completo en Firestore colección 'usuarios'
+      await setDoc(doc(db, 'usuarios', credential.user.uid), {
+        uid: credential.user.uid,
+        nombre: data.firstName,
+        apellido: data.lastName,
+        email: normalizedEmail,
+        curso: data.course,
+        division: data.division,
+        tipo: data.type,
+        fechaRegistro: new Date().toISOString(),
       });
-    } else {
-      setView('denied');
+      // useAuth (App.tsx) recoge la sesión vía onAuthStateChanged a partir de acá.
+    } catch (err: any) {
+      setErrorMessage(
+        err.code === 'auth/email-already-in-use'
+          ? 'Ese email ya tiene una cuenta registrada'
+          : 'No se pudo completar el registro. Intentá de nuevo.'
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   if (view === 'denied') {
-    return <AccessDeniedScreen onBack={() => setView('login')} />;
+    return <AccessDeniedScreen onBack={() => setView('register')} />;
   }
 
   if (view === 'register') {
-    return <RegisterScreen onSubmitRegister={handleRegister} onGoLogin={() => setView('login')} />;
+    return (
+      <RegisterScreen
+        onSubmitRegister={handleRegister}
+        onGoLogin={() => { setErrorMessage(''); setView('login'); }}
+        errorMessage={errorMessage}
+        isSubmitting={isSubmitting}
+      />
+    );
   }
 
-  return <LoginScreen onSubmitLogin={handleLogin} onGoRegister={() => setView('register')} />;
+  return (
+    <LoginScreen
+      onSubmitLogin={handleLogin}
+      onGoRegister={() => { setErrorMessage(''); setView('register'); }}
+      errorMessage={errorMessage}
+      isSubmitting={isSubmitting}
+    />
+  );
 };

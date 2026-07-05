@@ -8,6 +8,8 @@ import { Eye, EyeOff } from 'lucide-react';
 interface LoginScreenProps {
   onSubmitLogin: (email: string, password: string) => void;
   onGoRegister: () => void;
+  errorMessage?: string;
+  isSubmitting?: boolean;
 }
 
 const loginSchema = z.object({
@@ -15,7 +17,7 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Ingresá tu contraseña'),
 });
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onSubmitLogin, onGoRegister }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onSubmitLogin, onGoRegister, errorMessage, isSubmitting }) => {
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -92,12 +94,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSubmitLogin, onGoReg
           )}
         </div>
 
+        {errorMessage && (
+          <p className="text-[11px] text-[#CC0000] font-bold text-center bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+            {errorMessage}
+          </p>
+        )}
+
         <button
           id="btn-login-submit"
           type="submit"
-          className="w-full bg-[#CC0000] hover:bg-red-700 text-white font-bold text-sm py-3.5 rounded-2xl shadow-[0_4px_16px_rgba(204,0,0,0.25)] transition-all cursor-pointer mt-2"
+          disabled={isSubmitting}
+          className="w-full bg-[#CC0000] hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm py-3.5 rounded-2xl shadow-[0_4px_16px_rgba(204,0,0,0.25)] transition-all cursor-pointer mt-2"
         >
-          Ingresar
+          {isSubmitting ? 'Ingresando...' : 'Ingresar'}
         </button>
 
         <button

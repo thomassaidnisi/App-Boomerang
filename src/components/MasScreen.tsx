@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DocItem, EventItem, TeamMember, BonoInfo } from '../types';
-import { FileText, Calendar, Users, Ticket, ChevronRight, ArrowLeft, Download, Shield, ShieldCheck, MapPin, Clock } from 'lucide-react';
+import { FileText, Calendar, Users, Ticket, ChevronRight, ArrowLeft, Download, Shield, ShieldCheck, MapPin, Clock, LogOut } from 'lucide-react';
 import { BonoScreen } from './BonoScreen';
 
 interface MasScreenProps {
@@ -11,6 +11,8 @@ interface MasScreenProps {
   isAdminMode: boolean;
   onToggleAdmin: (val: boolean) => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
+  onLogout: () => void;
+  canAccessAdmin: boolean;
 }
 
 type SubSection = 'menu' | 'documentos' | 'agenda' | 'nosotros' | 'bono';
@@ -23,6 +25,8 @@ export const MasScreen: React.FC<MasScreenProps> = ({
   isAdminMode,
   onToggleAdmin,
   onShowToast,
+  onLogout,
+  canAccessAdmin,
 }) => {
   const [activeSection, setActiveSection] = useState<SubSection>('menu');
 
@@ -130,43 +134,55 @@ export const MasScreen: React.FC<MasScreenProps> = ({
         </div>
 
         {/* ADMIN MODE TOGGLE SWITCH CARD */}
-        <div 
-          id="admin-toggle-panel"
-          className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm mt-2 animate-fade-in"
-        >
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${isAdminMode ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
-              {isAdminMode ? <ShieldCheck className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">Panel de Administración</span>
-              <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed max-w-[180px]">
-                Habilitá esto para moderar propuestas, publicar noticias y subir el bono.
-              </p>
-            </div>
-          </div>
-
-          <button
-            id="btn-admin-toggle"
-            onClick={() => {
-              const next = !isAdminMode;
-              onToggleAdmin(next);
-              onShowToast(
-                next ? 'Modo Administrador Activo' : 'Modo Estudiante Activo',
-                next ? 'success' : 'info'
-              );
-            }}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-              isAdminMode ? 'bg-[#CC0000]' : 'bg-gray-200'
-            }`}
+        {canAccessAdmin && (
+          <div
+            id="admin-toggle-panel"
+            className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm mt-2 animate-fade-in"
           >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                isAdminMode ? 'translate-x-5' : 'translate-x-0'
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${isAdminMode ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                {isAdminMode ? <ShieldCheck className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">Panel de Administración</span>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed max-w-[180px]">
+                  Habilitá esto para moderar propuestas, publicar noticias y subir el bono.
+                </p>
+              </div>
+            </div>
+
+            <button
+              id="btn-admin-toggle"
+              onClick={() => {
+                const next = !isAdminMode;
+                onToggleAdmin(next);
+                onShowToast(
+                  next ? 'Modo Administrador Activo' : 'Modo Estudiante Activo',
+                  next ? 'success' : 'info'
+                );
+              }}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isAdminMode ? 'bg-[#CC0000]' : 'bg-gray-200'
               }`}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  isAdminMode ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
+        {/* LOGOUT */}
+        <button
+          id="btn-logout"
+          onClick={onLogout}
+          className="flex items-center justify-center gap-2 bg-white border border-gray-100 hover:border-red-100 hover:text-[#CC0000] text-gray-500 font-bold text-xs py-3.5 rounded-2xl transition-all cursor-pointer mt-1 shadow-sm"
+        >
+          <LogOut className="w-4 h-4" />
+          Cerrar sesión
+        </button>
 
       </div>
     );

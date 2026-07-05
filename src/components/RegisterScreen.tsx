@@ -10,11 +10,14 @@ interface RegisterScreenProps {
     firstName: string;
     lastName: string;
     email: string;
+    password: string;
     course: string;
     division: string;
     type: 'Estudiante' | 'Docente';
   }) => void;
   onGoLogin: () => void;
+  errorMessage?: string;
+  isSubmitting?: boolean;
 }
 
 const registerSchema = z.object({
@@ -31,7 +34,7 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onSubmitRegister, onGoLogin }) => {
+export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onSubmitRegister, onGoLogin, errorMessage, isSubmitting }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -58,6 +61,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onSubmitRegister
       firstName: data.firstName,
       lastName: data.lastName,
       email: data.email,
+      password: data.password,
       course: data.course,
       division: data.division,
       type: data.type,
@@ -199,12 +203,19 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onSubmitRegister
           </select>
         </div>
 
+        {errorMessage && (
+          <p className="text-[11px] text-[#CC0000] font-bold text-center bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+            {errorMessage}
+          </p>
+        )}
+
         <button
           id="btn-register-submit"
           type="submit"
-          className="w-full bg-[#CC0000] hover:bg-red-700 text-white font-bold text-sm py-3.5 rounded-2xl shadow-[0_4px_16px_rgba(204,0,0,0.25)] transition-all cursor-pointer mt-2"
+          disabled={isSubmitting}
+          className="w-full bg-[#CC0000] hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm py-3.5 rounded-2xl shadow-[0_4px_16px_rgba(204,0,0,0.25)] transition-all cursor-pointer mt-2"
         >
-          Registrarse
+          {isSubmitting ? 'Creando cuenta...' : 'Registrarse'}
         </button>
       </form>
 

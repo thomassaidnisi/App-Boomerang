@@ -3,9 +3,10 @@ import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
 interface AccessDeniedScreenProps {
   onBack: () => void;
+  actionLabel?: string;
 }
 
-export const AccessDeniedScreen: React.FC<AccessDeniedScreenProps> = ({ onBack }) => {
+export const AccessDeniedScreen: React.FC<AccessDeniedScreenProps> = ({ onBack, actionLabel = 'Volver' }) => {
   return (
     <div
       id="access-denied-screen"
@@ -18,7 +19,7 @@ export const AccessDeniedScreen: React.FC<AccessDeniedScreenProps> = ({ onBack }
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-black text-[#1A1A1A]">Acceso Denegado</h2>
         <p className="text-xs text-gray-500 leading-relaxed max-w-[260px]">
-          Tu email no está autorizado. Contactá al Centro de Estudiantes Boomerang.
+          Tu email no está autorizado. Contactá al Centro de Estudiantes Boomerang para solicitar acceso.
         </p>
         <p className="text-xs font-bold text-[#CC0000] mt-1">cec.boomerang@ija.edu.ar</p>
       </div>
@@ -29,7 +30,7 @@ export const AccessDeniedScreen: React.FC<AccessDeniedScreenProps> = ({ onBack }
         className="flex items-center gap-2 bg-[#1A1A1A] hover:bg-black text-white font-bold text-xs px-5 py-3 rounded-2xl transition-all cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" />
-        Volver
+        {actionLabel}
       </button>
     </div>
   );
