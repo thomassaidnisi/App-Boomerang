@@ -1,16 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { useAuth } from './hooks/useAuth';
 import {
-  initialNews,
-  initialProposals,
-  initialVotes,
+  subscribeNoticias,
+  subscribePropuestas,
+  subscribeVotaciones,
+  createNoticia,
+  createPropuesta,
+  updatePropuestaEstado,
+  updatePropuestaVotos,
+  createVotacion,
+  yaVoto,
+  registrarVoto,
+  getUsuariosAutorizados,
+  addUsuarioAutorizado,
+  updateUsuarioAutorizado,
+  getDocumentos,
+  addDocumento,
+  toggleDocumentoActivo,
+  deleteDocumento,
+} from './lib/firestore';
+import {
   initialBono,
-  initialDocs,
   initialEvents,
   initialTeam,
-  initialUsers
 } from './data';
 import {
   NewsItem,
@@ -37,10 +51,20 @@ import { AuthFlow } from './components/AuthFlow';
 
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 
+// Simple pulsing skeleton block used while a screen's data is loading
+function ScreenSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-4 animate-pulse">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="h-20 bg-gray-100 rounded-2xl" />
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   // Auth State (Firebase Auth + Firestore whitelist check)
-  const { authorizedUser, loading: authLoading, isAdmin: isFirestoreAdmin } = useAuth();
-  const [users, setUsers] = useState<AuthorizedUser[]>(initialUsers);
+  const { user, authorizedUser, loading: authLoading, isAdmin: isFirestoreAdmin } = useAuth();
 
   const handleLogout = () => {
     signOut(auth);
@@ -49,12 +73,26 @@ export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType | 'admin'>('inicio');
 
-  // App Databases in React State
-  const [news, setNews] = useState<NewsItem[]>(initialNews);
-  const [proposals, setProposals] = useState<Proposal[]>(initialProposals);
-  const [votes, setVotes] = useState<Vote[]>(initialVotes);
+  // App Databases fetched from Firestore
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [proposalsLoading, setProposalsLoading] = useState(true);
+  const [myProposalVotes, setMyProposalVotes] = useState<Record<string, 'up' | 'down'>>({});
+
+  const [votes, setVotes] = useState<Vote[]>([]);
+  const [votesLoading, setVotesLoading] = useState(true);
+  const [myVoteMap, setMyVoteMap] = useState<Record<string, string>>({});
+
+  const [documents, setDocuments] = useState<DocItem[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+
+  const [users, setUsers] = useState<AuthorizedUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+
+  // Data not yet migrated to Firestore (out of current scope)
   const [bonoInfo, setBonoInfo] = useState<BonoInfo>(initialBono);
-  const [documents, setDocuments] = useState<DocItem[]>(initialDocs);
   const [events] = useState(initialEvents);
   const [team] = useState(initialTeam);
 
@@ -73,215 +111,275 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const refetchDocuments = async () => {
+    try {
+      setDocuments(await getDocumentos());
+    } catch {
+      showToast('No se pudieron cargar los documentos', 'error');
+    }
+  };
+
+  const refetchUsers = async () => {
+    try {
+      setUsers(await getUsuariosAutorizados());
+    } catch {
+      showToast('No se pudieron cargar los usuarios autorizados', 'error');
+    }
+  };
+
+  // Live subscriptions to real-time collections, gated behind an authorized session
+  useEffect(() => {
+    if (!authorizedUser) return;
+
+    const unsubNoticias = subscribeNoticias((items) => {
+      setNews(items);
+      setNewsLoading(false);
+    });
+    const unsubPropuestas = subscribePropuestas((items) => {
+      setProposals(items);
+      setProposalsLoading(false);
+    });
+    const unsubVotaciones = subscribeVotaciones((items) => {
+      setVotes(items);
+      setVotesLoading(false);
+    });
+
+    setDocumentsLoading(true);
+    setUsersLoading(true);
+    refetchDocuments().finally(() => setDocumentsLoading(false));
+    refetchUsers().finally(() => setUsersLoading(false));
+
+    return () => {
+      unsubNoticias();
+      unsubPropuestas();
+      unsubVotaciones();
+    };
+  }, [authorizedUser]);
+
+  // Fetch which options the current user already voted, whenever the vote list changes
+  useEffect(() => {
+    if (!user || votes.length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      const entries = await Promise.all(
+        votes.map(async (v) => [v.id, await yaVoto(v.id, user.uid)] as const)
+      );
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      entries.forEach(([voteId, opcionId]) => {
+        if (opcionId) map[voteId] = opcionId;
+      });
+      setMyVoteMap(map);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, votes]);
+
   // State Mutators / Action Handlers
 
   // 1. Submit Proposal (Student View)
-  const handleCreateProposal = (newProp: Omit<Proposal, 'id' | 'date' | 'upvotes' | 'downvotes' | 'userVote' | 'responses'>) => {
-    const fresh: Proposal = {
-      ...newProp,
-      id: `prop-${Date.now()}`,
-      date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      upvotes: 0,
-      downvotes: 0,
-      userVote: null,
-      responses: []
-    };
-    setProposals(prev => [fresh, ...prev]);
-    showToast('¡Tu propuesta fue enviada correctamente!', 'success');
+  const handleCreateProposal = async (newProp: Omit<Proposal, 'id' | 'date' | 'upvotes' | 'downvotes' | 'userVote' | 'responses'>) => {
+    try {
+      await createPropuesta(newProp);
+      showToast('¡Tu propuesta fue enviada correctamente!', 'success');
+    } catch {
+      showToast('No se pudo enviar la propuesta. Intentá de nuevo.', 'error');
+    }
   };
 
   // 2. Upvote / Downvote Proposal
-  const handleVoteProposal = (id: string, type: 'up' | 'down') => {
-    setProposals(prev => prev.map(p => {
-      if (p.id !== id) return p;
+  const handleVoteProposal = async (id: string, type: 'up' | 'down') => {
+    const proposal = proposals.find((p) => p.id === id);
+    if (!proposal) return;
 
-      let upDiff = 0;
-      let downDiff = 0;
-      let nextVote: 'up' | 'down' | null = type;
+    const currentVote = myProposalVotes[id] ?? null;
+    let upDiff = 0;
+    let downDiff = 0;
+    let nextVote: 'up' | 'down' | null = type;
 
-      if (p.userVote === type) {
-        // Undo vote
-        upDiff = type === 'up' ? -1 : 0;
-        downDiff = type === 'down' ? -1 : 0;
-        nextVote = null;
+    if (currentVote === type) {
+      upDiff = type === 'up' ? -1 : 0;
+      downDiff = type === 'down' ? -1 : 0;
+      nextVote = null;
+    } else {
+      if (currentVote === 'up') upDiff = -1;
+      if (currentVote === 'down') downDiff = -1;
+      if (type === 'up') upDiff += 1;
+      else downDiff += 1;
+    }
+
+    const nextUpvotes = proposal.upvotes + upDiff;
+    const nextDownvotes = proposal.downvotes + downDiff;
+
+    try {
+      await updatePropuestaVotos(id, nextUpvotes, nextDownvotes);
+      setMyProposalVotes((prev) => {
+        const next = { ...prev };
+        if (nextVote) next[id] = nextVote;
+        else delete next[id];
+        return next;
+      });
+      if (nextVote === null) {
         showToast('Voto removido', 'info');
+      } else if (type === 'up') {
+        showToast('¡Apoyaste esta propuesta! 👍', 'success');
       } else {
-        // Registering or changing vote
-        if (p.userVote === 'up') upDiff = -1;
-        if (p.userVote === 'down') downDiff = -1;
-
-        if (type === 'up') {
-          upDiff += 1;
-          showToast('¡Apoyaste esta propuesta! 👍', 'success');
-        } else {
-          downDiff += 1;
-          showToast('Votaste en contra 👎', 'info');
-        }
+        showToast('Votaste en contra 👎', 'info');
       }
-
-      return {
-        ...p,
-        upvotes: p.upvotes + upDiff,
-        downvotes: p.downvotes + downDiff,
-        userVote: nextVote
-      };
-    }));
+    } catch {
+      showToast('No se pudo registrar tu voto. Intentá de nuevo.', 'error');
+    }
   };
 
   // 3. Vote on a Plebiscito (Active Poll)
-  const handleCastVote = (voteId: string, optionId: string) => {
-    setVotes(prev => prev.map(v => {
-      if (v.id !== voteId) return v;
-      if (v.userVotedOptionId !== null) return v; // already voted
+  const handleCastVote = async (voteId: string, optionId: string) => {
+    if (!user) return;
+    if (myVoteMap[voteId]) return; // already voted
 
-      const updatedOptions = v.options.map(o => {
-        if (o.id === optionId) {
-          return { ...o, votes: o.votes + 1 };
-        }
-        return o;
-      });
-
-      return {
-        ...v,
-        options: updatedOptions,
-        totalVotes: v.totalVotes + 1,
-        userVotedOptionId: optionId
-      };
-    }));
-    showToast('¡Voto registrado correctamente!', 'success');
+    try {
+      await registrarVoto(voteId, user.uid, optionId);
+      setMyVoteMap((prev) => ({ ...prev, [voteId]: optionId }));
+      showToast('¡Voto registrado correctamente!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'No se pudo registrar el voto. Intentá de nuevo.', 'error');
+    }
   };
 
   // 4. Update Proposal Status (Admin view)
-  const handleUpdateProposalStatus = (id: string, status: ProposalStatus, responseText?: string) => {
-    setProposals(prev => prev.map(p => {
-      if (p.id !== id) return p;
-
-      const updatedResponses = [...p.responses];
-      if (responseText !== undefined && responseText.trim() !== '') {
-        // If there was an existing response, we edit it, otherwise we append
-        if (updatedResponses.length > 0) {
-          updatedResponses[0] = {
+  const handleUpdateProposalStatus = async (id: string, status: ProposalStatus, responseText?: string) => {
+    try {
+      const respuesta = responseText && responseText.trim() !== ''
+        ? {
             date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
             responder: 'Mesa Directiva CEC Boomerang',
             text: responseText.trim()
-          };
-        } else {
-          updatedResponses.push({
-            date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
-            responder: 'Mesa Directiva CEC Boomerang',
-            text: responseText.trim()
-          });
-        }
-      }
-
-      return {
-        ...p,
-        status,
-        responses: updatedResponses
-      };
-    }));
+          }
+        : undefined;
+      await updatePropuestaEstado(id, status, respuesta);
+      showToast('Propuesta actualizada correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar la propuesta. Intentá de nuevo.', 'error');
+    }
   };
 
   // 5. Publish News (Admin view)
-  const handlePublishNews = (newItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => {
-    const fresh: NewsItem = {
-      ...newItem,
-      id: `news-${Date.now()}`,
-      date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      featured: false
-    };
-    setNews(prev => [fresh, ...prev]);
+  const handlePublishNews = async (newItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => {
+    try {
+      await createNoticia(newItem);
+      showToast('Noticia publicada correctamente', 'success');
+    } catch {
+      showToast('No se pudo publicar la noticia. Intentá de nuevo.', 'error');
+    }
   };
 
-  // 6. Update Bono Course Sales (Admin view)
+  // 6. Update Bono Course Sales (Admin view) — not yet migrated to Firestore
   const handleUpdateBonoSales = (course: string, sales: number) => {
     setBonoInfo(prev => {
-      const updatedSales = prev.courseSales.map(item => 
+      const updatedSales = prev.courseSales.map(item =>
         item.course === course ? { ...item, sales } : item
       );
-
-      // Recalculate totalRaised based on updated sales
       const totalRaised = updatedSales.reduce((acc, curr) => acc + curr.sales, 0);
-
       return {
         ...prev,
-        courseSales: updatedSales.sort((a, b) => b.sales - a.sales), // Keep sorted by sales
+        courseSales: updatedSales.sort((a, b) => b.sales - a.sales),
         totalRaised
       };
     });
   };
 
   // 7. Create custom Poll/Vote (Admin view)
-  const handleCreateVote = (question: string, optionsText: string[], expiresDays: number) => {
-    const expiry = new Date();
-    expiry.setDate(expiry.getDate() + expiresDays);
-
-    const fresh: Vote = {
-      id: `vote-${Date.now()}`,
-      question,
-      options: optionsText.map((t, idx) => ({ id: `opt-${Date.now()}-${idx}`, text: t, votes: 0 })),
-      totalVotes: 0,
-      expiresAt: expiry.toISOString(),
-      userVotedOptionId: null,
-      active: true
-    };
-    setVotes(prev => [fresh, ...prev]);
+  const handleCreateVote = async (question: string, optionsText: string[], expiresDays: number) => {
+    try {
+      await createVotacion(question, optionsText, expiresDays);
+      showToast('Votación creada correctamente', 'success');
+    } catch {
+      showToast('No se pudo crear la votación. Intentá de nuevo.', 'error');
+    }
   };
 
-  // 8. Add Official Document (Admin view — feeds public Documentos & the Asistente context)
-  // TODO: al conectar Firebase, subir el archivo a Firebase Storage y guardar
-  // la URL + texto extraído en Firestore
-  const handleAddDocument = (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => {
-    const fresh: DocItem = {
-      id: `doc-${Date.now()}`,
-      title,
-      fileName,
-      fileType: fileType.toUpperCase(),
-      size: fileSizeBytes > 1024 * 1024
+  // 8. Add Official Document (Admin view)
+  const handleAddDocument = async (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => {
+    try {
+      const size = fileSizeBytes > 1024 * 1024
         ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`,
-      date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      active: true,
-      content
-    };
-    setDocuments(prev => [fresh, ...prev]);
-    showToast('Documento agregado correctamente', 'success');
+        : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`;
+      await addDocumento({ title, fileName, fileType: fileType.toUpperCase(), size, content });
+      await refetchDocuments();
+      showToast('Documento agregado correctamente', 'success');
+    } catch {
+      showToast('No se pudo agregar el documento. Intentá de nuevo.', 'error');
+    }
   };
 
   // 9. Toggle Document Active State (Admin view)
-  const handleToggleDocumentActive = (id: string) => {
-    setDocuments(prev => prev.map(d => d.id === id ? { ...d, active: !d.active } : d));
+  const handleToggleDocumentActive = async (id: string) => {
+    const current = documents.find((d) => d.id === id);
+    if (!current) return;
+    try {
+      await toggleDocumentoActivo(id, !current.active);
+      await refetchDocuments();
+    } catch {
+      showToast('No se pudo actualizar el documento. Intentá de nuevo.', 'error');
+    }
   };
 
   // 10. Delete Document (Admin view)
-  const handleDeleteDocument = (id: string) => {
-    setDocuments(prev => prev.filter(d => d.id !== id));
-    showToast('Documento eliminado', 'info');
+  const handleDeleteDocument = async (id: string) => {
+    try {
+      await deleteDocumento(id);
+      await refetchDocuments();
+      showToast('Documento eliminado', 'info');
+    } catch {
+      showToast('No se pudo eliminar el documento. Intentá de nuevo.', 'error');
+    }
   };
 
   // 11. Add Authorized User (Admin view)
-  const handleAddUser = (user: Omit<AuthorizedUser, 'id' | 'active'>) => {
-    const fresh: AuthorizedUser = { ...user, id: `user-${Date.now()}`, active: true };
-    setUsers(prev => [fresh, ...prev]);
-    showToast('Usuario agregado correctamente', 'success');
+  const handleAddUser = async (user: Omit<AuthorizedUser, 'id' | 'active'>) => {
+    try {
+      await addUsuarioAutorizado(user);
+      await refetchUsers();
+      showToast('Usuario agregado correctamente', 'success');
+    } catch {
+      showToast('No se pudo agregar el usuario. Intentá de nuevo.', 'error');
+    }
   };
 
   // 12. Toggle Authorized User Active State (Admin view)
-  const handleToggleUserActive = (id: string) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, active: !u.active } : u));
+  const handleToggleUserActive = async (id: string) => {
+    const current = users.find((u) => u.id === id);
+    if (!current) return;
+    try {
+      await updateUsuarioAutorizado(id, { active: !current.active });
+      await refetchUsers();
+    } catch {
+      showToast('No se pudo actualizar el usuario. Intentá de nuevo.', 'error');
+    }
   };
 
   // 13. Bulk Import Authorized Users from Excel/CSV (Admin view)
-  const handleImportUsers = (imported: Omit<AuthorizedUser, 'id' | 'active'>[]) => {
-    // TODO: al conectar Firebase, escribir cada usuario a Firestore colección 'usuarios_autorizados'
-    const fresh: AuthorizedUser[] = imported.map((u, idx) => ({
-      ...u,
-      id: `user-${Date.now()}-${idx}`,
-      active: true
-    }));
-    setUsers(prev => [...fresh, ...prev]);
-    showToast(`${fresh.length} usuarios importados correctamente`, 'success');
+  const handleImportUsers = async (imported: Omit<AuthorizedUser, 'id' | 'active'>[]) => {
+    try {
+      await Promise.all(imported.map((u) => addUsuarioAutorizado(u)));
+      await refetchUsers();
+      showToast(`${imported.length} usuarios importados correctamente`, 'success');
+    } catch {
+      showToast('No se pudieron importar los usuarios. Intentá de nuevo.', 'error');
+    }
   };
+
+  const proposalsWithMyVotes = proposals.map((p) => ({
+    ...p,
+    userVote: myProposalVotes[p.id] ?? null,
+  }));
+
+  const votesWithMyVotes = votes.map((v) => ({
+    ...v,
+    userVotedOptionId: myVoteMap[v.id] ?? null,
+  }));
 
   return (
     <div
@@ -333,8 +431,8 @@ export default function App() {
               <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
             </div>
           ) : (
-            <Header 
-              isHome={false} 
+            <Header
+              isHome={false}
               title={{
                 propuestas: 'Propuestas de los Alumnos',
                 votaciones: 'Votaciones y Plebiscitos',
@@ -347,25 +445,31 @@ export default function App() {
           {/* Inside App Screens layout */}
           <main className="flex-1 overflow-hidden relative bg-gray-50 flex flex-col">
             {activeTab === 'inicio' && (
-              <InicioScreen 
-                news={news} 
-                onOpenNews={(item) => setActiveNews(item)} 
-              />
+              newsLoading ? <ScreenSkeleton /> : (
+                <InicioScreen
+                  news={news}
+                  onOpenNews={(item) => setActiveNews(item)}
+                />
+              )
             )}
 
             {activeTab === 'propuestas' && (
-              <PropuestasScreen 
-                proposals={proposals} 
-                onCreateProposal={handleCreateProposal}
-                onVoteProposal={handleVoteProposal}
-              />
+              proposalsLoading ? <ScreenSkeleton /> : (
+                <PropuestasScreen
+                  proposals={proposalsWithMyVotes}
+                  onCreateProposal={handleCreateProposal}
+                  onVoteProposal={handleVoteProposal}
+                />
+              )
             )}
 
             {activeTab === 'votaciones' && (
-              <VotacionesScreen 
-                votes={votes} 
-                onCastVote={handleCastVote} 
-              />
+              votesLoading ? <ScreenSkeleton /> : (
+                <VotacionesScreen
+                  votes={votesWithMyVotes}
+                  onCastVote={handleCastVote}
+                />
+              )
             )}
 
             {activeTab === 'asistente' && (
@@ -376,7 +480,7 @@ export default function App() {
               <div className="flex flex-col h-full bg-gray-50">
                 {/* Extra banner in menu if admin mode is toggled on to invite them to Panel */}
                 {isAdminMode && (
-                  <div 
+                  <div
                     id="admin-alert-banner"
                     onClick={() => setActiveTab('admin')}
                     className="bg-emerald-50 border-y border-emerald-200 px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-emerald-100/60 transition-all text-emerald-950 shrink-0"
@@ -394,55 +498,61 @@ export default function App() {
                   </div>
                 )}
 
-                <MasScreen
-                  documents={documents.filter(d => d.active)}
-                  events={events}
-                  team={team}
-                  bonoInfo={bonoInfo}
-                  isAdminMode={isAdminMode}
-                  onToggleAdmin={setIsAdminMode}
-                  onShowToast={showToast}
-                  onLogout={handleLogout}
-                  canAccessAdmin={isFirestoreAdmin}
-                />
+                {documentsLoading ? (
+                  <ScreenSkeleton />
+                ) : (
+                  <MasScreen
+                    documents={documents.filter(d => d.active)}
+                    events={events}
+                    team={team}
+                    bonoInfo={bonoInfo}
+                    isAdminMode={isAdminMode}
+                    onToggleAdmin={setIsAdminMode}
+                    onShowToast={showToast}
+                    onLogout={handleLogout}
+                    canAccessAdmin={isFirestoreAdmin}
+                  />
+                )}
               </div>
             )}
 
             {activeTab === 'admin' && isFirestoreAdmin && (
-              <AdminPanel
-                proposals={proposals}
-                votes={votes}
-                news={news}
-                bonoInfo={bonoInfo}
-                documents={documents}
-                users={users}
-                onUpdateProposalStatus={handleUpdateProposalStatus}
-                onPublishNews={handlePublishNews}
-                onUpdateBonoSales={handleUpdateBonoSales}
-                onCreateVote={handleCreateVote}
-                onAddDocument={handleAddDocument}
-                onToggleDocumentActive={handleToggleDocumentActive}
-                onDeleteDocument={handleDeleteDocument}
-                onAddUser={handleAddUser}
-                onToggleUserActive={handleToggleUserActive}
-                onImportUsers={handleImportUsers}
-                onShowToast={showToast}
-              />
+              usersLoading ? <ScreenSkeleton /> : (
+                <AdminPanel
+                  proposals={proposalsWithMyVotes}
+                  votes={votesWithMyVotes}
+                  news={news}
+                  bonoInfo={bonoInfo}
+                  documents={documents}
+                  users={users}
+                  onUpdateProposalStatus={handleUpdateProposalStatus}
+                  onPublishNews={handlePublishNews}
+                  onUpdateBonoSales={handleUpdateBonoSales}
+                  onCreateVote={handleCreateVote}
+                  onAddDocument={handleAddDocument}
+                  onToggleDocumentActive={handleToggleDocumentActive}
+                  onDeleteDocument={handleDeleteDocument}
+                  onAddUser={handleAddUser}
+                  onToggleUserActive={handleToggleUserActive}
+                  onImportUsers={handleImportUsers}
+                  onShowToast={showToast}
+                />
+              )
             )}
           </main>
 
           {/* Global News detail overlay */}
           {activeNews && (
-            <NewsDetail 
-              item={activeNews} 
-              onClose={() => setActiveNews(null)} 
+            <NewsDetail
+              item={activeNews}
+              onClose={() => setActiveNews(null)}
             />
           )}
 
           {/* Floating notifications */}
-          <ToastContainer 
-            toasts={toasts} 
-            onClose={dismissToast} 
+          <ToastContainer
+            toasts={toasts}
+            onClose={dismissToast}
           />
 
           {/* Nav bar */}
