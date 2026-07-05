@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   getDoc,
@@ -16,6 +17,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { initialBono } from '../data';
 import {
   NewsItem,
   Proposal,
@@ -25,6 +27,10 @@ import {
   VoteOption,
   AuthorizedUser,
   DocItem,
+  BonoInfo,
+  CourseSale,
+  EventItem,
+  TeamMember,
 } from '../types';
 
 const fechaHoy = () =>
@@ -237,4 +243,195 @@ export async function toggleDocumentoActivo(id: string, activo: boolean): Promis
 
 export async function deleteDocumento(id: string): Promise<void> {
   await deleteDoc(doc(db, 'documentos', id));
+}
+
+// ---------------------------------------------------------------------------
+// Bono Contribución
+// ---------------------------------------------------------------------------
+
+const bonoConfigRef = doc(db, 'bono', 'config');
+const bonoVentasCol = collection(db, 'bono', 'config', 'ventas');
+
+const slugCurso = (curso: string) => curso.replace(/\s+/g, '_').replace(/[°]/g, '');
+
+async function seedBonoIfMissing(): Promise<void> {
+  const configSnap = await getDoc(bonoConfigRef);
+  if (!configSnap.exists()) {
+    await updateBonoConfigInternal({
+      totalMeta: initialBono.goal,
+      fechaSorteo: initialBono.drawDate,
+      premios: initialBono.prizes,
+    });
+  }
+
+  const ventasSnap = await getDocs(bonoVentasCol);
+  if (ventasSnap.empty) {
+    await Promise.all(
+      initialBono.courseSales.map((cs) =>
+        updateVentasCurso(cs.course, cs.sales)
+      )
+    );
+  }
+}
+
+async function updateBonoConfigInternal(data: {
+  totalMeta: number;
+  fechaSorteo: string;
+  premios: BonoInfo['prizes'];
+}): Promise<void> {
+  await setDoc(bonoConfigRef, data, { merge: true });
+}
+
+export async function getBono(): Promise<BonoInfo> {
+  await seedBonoIfMissing();
+
+  const [configSnap, ventasSnap] = await Promise.all([getDoc(bonoConfigRef), getDocs(bonoVentasCol)]);
+  const config = configSnap.data() as { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] };
+  const courseSales: CourseSale[] = ventasSnap.docs.map((d) => {
+    const v = d.data();
+    return { course: v.curso, sales: v.cantidad };
+  });
+
+  return {
+    totalRaised: courseSales.reduce((acc, c) => acc + c.sales, 0),
+    goal: config.totalMeta,
+    drawDate: config.fechaSorteo,
+    prizes: config.premios,
+    courseSales,
+  };
+}
+
+export function subscribeBono(onChange: (info: BonoInfo) => void): Unsubscribe {
+  let latestConfig: { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] } | null = null;
+  let latestVentas: CourseSale[] = [];
+
+  const emit = () => {
+    if (!latestConfig) return;
+    onChange({
+      totalRaised: latestVentas.reduce((acc, c) => acc + c.sales, 0),
+      goal: latestConfig.totalMeta,
+      drawDate: latestConfig.fechaSorteo,
+      prizes: latestConfig.premios,
+      courseSales: latestVentas,
+    });
+  };
+
+  const unsubConfig = onSnapshot(bonoConfigRef, (snap) => {
+    if (snap.exists()) {
+      latestConfig = snap.data() as { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] };
+      emit();
+    }
+  });
+
+  const unsubVentas = onSnapshot(bonoVentasCol, (snap) => {
+    latestVentas = snap.docs.map((d) => {
+      const v = d.data();
+      return { course: v.curso, sales: v.cantidad };
+    });
+    emit();
+  });
+
+  return () => {
+    unsubConfig();
+    unsubVentas();
+  };
+}
+
+export async function updateVentasCurso(curso: string, cantidad: number): Promise<void> {
+  const ventaRef = doc(db, 'bono', 'config', 'ventas', slugCurso(curso));
+  await setDoc(ventaRef, { curso, division: '', cantidad }, { merge: true });
+}
+
+// ---------------------------------------------------------------------------
+// Eventos / Agenda
+// ---------------------------------------------------------------------------
+
+const eventosCol = collection(db, 'eventos');
+
+function eventoDocToItem(id: string, data: any): EventItem {
+  const fechaObj = new Date(data.fecha);
+  return {
+    id,
+    title: data.titulo,
+    description: data.descripcion,
+    date: fechaObj.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
+    time: fechaObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+    location: data.tipo,
+  };
+}
+
+export async function getEventos(): Promise<EventItem[]> {
+  const q = query(eventosCol, orderBy('fecha', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => eventoDocToItem(d.id, d.data()));
+}
+
+export function subscribeEventos(onChange: (items: EventItem[]) => void): Unsubscribe {
+  const q = query(eventosCol, orderBy('fecha', 'asc'));
+  return onSnapshot(q, (snap) => {
+    onChange(snap.docs.map((d) => eventoDocToItem(d.id, d.data())));
+  });
+}
+
+export async function createEvento(data: {
+  titulo: string;
+  descripcion: string;
+  fecha: string;
+  tipo: string;
+}): Promise<string> {
+  const ref = await addDoc(eventosCol, data);
+  return ref.id;
+}
+
+export async function deleteEvento(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'eventos', id));
+}
+
+// ---------------------------------------------------------------------------
+// Equipo / Nosotros
+// ---------------------------------------------------------------------------
+
+const equipoCol = collection(db, 'equipo');
+
+function miembroDocToItem(id: string, data: any): TeamMember {
+  return {
+    id,
+    name: data.nombre,
+    role: data.cargo,
+    photo: data.foto,
+  };
+}
+
+export async function getEquipo(): Promise<TeamMember[]> {
+  const q = query(equipoCol, orderBy('orden', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => miembroDocToItem(d.id, d.data()));
+}
+
+export function subscribeEquipo(onChange: (items: TeamMember[]) => void): Unsubscribe {
+  const q = query(equipoCol, orderBy('orden', 'asc'));
+  return onSnapshot(q, (snap) => {
+    onChange(snap.docs.map((d) => miembroDocToItem(d.id, d.data())));
+  });
+}
+
+export async function createMiembro(data: {
+  nombre: string;
+  cargo: string;
+  foto: string;
+  orden: number;
+}): Promise<string> {
+  const ref = await addDoc(equipoCol, data);
+  return ref.id;
+}
+
+export async function updateEquipo(
+  id: string,
+  data: Partial<{ nombre: string; cargo: string; foto: string; orden: number }>
+): Promise<void> {
+  await updateDoc(doc(db, 'equipo', id), data);
+}
+
+export async function deleteMiembro(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'equipo', id));
 }

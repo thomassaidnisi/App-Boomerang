@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Proposal, Vote, NewsItem, BonoInfo, ProposalStatus, DocItem, AuthorizedUser, UserRole } from '../types';
-import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Check, X, Megaphone, Edit3, FilePlus2, Users, Search, FileSpreadsheet, Upload, File as FileIcon, Loader2 } from 'lucide-react';
+import { Proposal, Vote, NewsItem, BonoInfo, ProposalStatus, DocItem, AuthorizedUser, UserRole, EventItem, TeamMember } from '../types';
+import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Check, X, Megaphone, Edit3, FilePlus2, Users, Search, FileSpreadsheet, Upload, File as FileIcon, Loader2, CalendarPlus, UserPlus } from 'lucide-react';
 import { ImportUsersDialog } from './ImportUsersDialog';
 import { extractTextFromFile, ExtractedFileType } from '../lib/fileTextExtractor';
 
@@ -14,6 +14,8 @@ interface AdminPanelProps {
   bonoInfo: BonoInfo;
   documents: DocItem[];
   users: AuthorizedUser[];
+  events: EventItem[];
+  team: TeamMember[];
   onUpdateProposalStatus: (id: string, status: ProposalStatus, responseText?: string) => void;
   onPublishNews: (newsItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => void;
   onUpdateBonoSales: (course: string, sales: number) => void;
@@ -24,10 +26,14 @@ interface AdminPanelProps {
   onAddUser: (user: Omit<AuthorizedUser, 'id' | 'active'>) => void;
   onToggleUserActive: (id: string) => void;
   onImportUsers: (users: Omit<AuthorizedUser, 'id' | 'active'>[]) => void;
+  onCreateEvento: (data: { titulo: string; descripcion: string; fecha: string; tipo: string }) => void;
+  onDeleteEvento: (id: string) => void;
+  onCreateMiembro: (data: { nombre: string; cargo: string; foto: string; orden: number }) => void;
+  onDeleteMiembro: (id: string) => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
 
-type AdminSubTab = 'stats' | 'proposals' | 'news' | 'bono' | 'vote' | 'docs' | 'users';
+type AdminSubTab = 'stats' | 'proposals' | 'news' | 'bono' | 'vote' | 'docs' | 'users' | 'eventos' | 'equipo';
 
 const COURSE_OPTIONS = ['1°A', '1°B', '2°A', '2°B', '3°A', '3°B', '4°A', '4°B', '5°A', '5°B', '6°A', '6°B'];
 
@@ -58,6 +64,20 @@ const voteSchema = z.object({
   expiresDays: z.number().min(1, 'Mínimo 1 día').max(30, 'Máximo 30 días'),
 });
 
+const eventoSchema = z.object({
+  titulo: z.string().min(5, 'Mínimo 5 caracteres').max(80, 'Máximo 80 caracteres'),
+  descripcion: z.string().min(10, 'Mínimo 10 caracteres').max(300, 'Máximo 300 caracteres'),
+  fecha: z.string().min(1, 'Seleccioná fecha y hora'),
+  tipo: z.string().min(1, 'Requerido'),
+});
+
+const miembroSchema = z.object({
+  nombre: z.string().min(3, 'Mínimo 3 caracteres'),
+  cargo: z.string().min(3, 'Mínimo 3 caracteres'),
+  foto: z.string().url('Ingresá una URL de imagen válida'),
+  orden: z.number().min(0, 'Mínimo 0'),
+});
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   proposals,
   votes,
@@ -65,6 +85,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   bonoInfo,
   documents,
   users,
+  events,
+  team,
   onUpdateProposalStatus,
   onPublishNews,
   onUpdateBonoSales,
@@ -75,6 +97,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddUser,
   onToggleUserActive,
   onImportUsers,
+  onCreateEvento,
+  onDeleteEvento,
+  onCreateMiembro,
+  onDeleteMiembro,
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminSubTab>('stats');
@@ -83,6 +109,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showDocForm, setShowDocForm] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showEventoForm, setShowEventoForm] = useState(false);
+  const [showMiembroForm, setShowMiembroForm] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docFileType, setDocFileType] = useState<ExtractedFileType | null>(null);
@@ -225,6 +253,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setShowUserForm(false);
   };
 
+  // 2d. Create Evento Form Setup
+  const {
+    register: regEvento,
+    handleSubmit: handleSubEvento,
+    reset: resetEvento,
+    formState: { errors: errorsEvento }
+  } = useForm({
+    resolver: zodResolver(eventoSchema),
+    defaultValues: { titulo: '', descripcion: '', fecha: '', tipo: 'Asamblea' }
+  });
+
+  const onSubmitEvento = (data: any) => {
+    onCreateEvento(data);
+    resetEvento();
+    setShowEventoForm(false);
+  };
+
+  // 2e. Create Miembro (Equipo) Form Setup
+  const {
+    register: regMiembro,
+    handleSubmit: handleSubMiembro,
+    reset: resetMiembro,
+    formState: { errors: errorsMiembro }
+  } = useForm({
+    resolver: zodResolver(miembroSchema),
+    defaultValues: { nombre: '', cargo: '', foto: '', orden: team.length }
+  });
+
+  const onSubmitMiembro = (data: any) => {
+    onCreateMiembro(data);
+    resetMiembro({ nombre: '', cargo: '', foto: '', orden: team.length + 1 });
+    setShowMiembroForm(false);
+  };
+
   const filteredUsers = users.filter(u =>
     u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
     u.name.toLowerCase().includes(userSearch.toLowerCase())
@@ -261,6 +323,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           { id: 'vote', label: 'Crear Voto', icon: CheckSquare },
           { id: 'docs', label: 'Documentos', icon: FilePlus2 },
           { id: 'users', label: 'Usuarios', icon: Users },
+          { id: 'eventos', label: 'Agenda', icon: CalendarPlus },
+          { id: 'equipo', label: 'Equipo', icon: UserPlus },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -1046,6 +1110,229 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           u.active ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 8: AGENDA / EVENTOS */}
+        {activeTab === 'eventos' && (
+          <div id="admin-eventos-view" className="flex flex-col gap-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-1">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest">
+                Agenda Escolar
+              </h4>
+              <button
+                id="btn-toggle-evento-form"
+                onClick={() => {
+                  if (showEventoForm) resetEvento();
+                  setShowEventoForm(prev => !prev);
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+              >
+                {showEventoForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {showEventoForm ? 'Cancelar' : 'Agregar evento'}
+              </button>
+            </div>
+
+            {showEventoForm && (
+              <form onSubmit={handleSubEvento(onSubmitEvento)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                  <input
+                    id="evento-titulo-input"
+                    type="text"
+                    placeholder="Ej: Torneo Fútsal - Fecha 1"
+                    {...regEvento('titulo')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsEvento.titulo && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEvento.titulo.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                  <textarea
+                    id="evento-descripcion-input"
+                    rows={3}
+                    placeholder="Detalles del evento..."
+                    {...regEvento('descripcion')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm placeholder-gray-400"
+                  />
+                  {errorsEvento.descripcion && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEvento.descripcion.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Fecha y hora</label>
+                  <input
+                    id="evento-fecha-input"
+                    type="datetime-local"
+                    {...regEvento('fecha')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                  />
+                  {errorsEvento.fecha && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEvento.fecha.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Tipo</label>
+                  <select
+                    id="evento-tipo-select"
+                    {...regEvento('tipo')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] shadow-sm cursor-pointer"
+                  >
+                    <option value="Asamblea">Asamblea</option>
+                    <option value="Torneo">Torneo Deportivo</option>
+                    <option value="Charla">Charla / Taller</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                </div>
+
+                <button
+                  id="btn-evento-submit"
+                  type="submit"
+                  className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <CalendarPlus className="w-4 h-4" />
+                  Guardar Evento
+                </button>
+              </form>
+            )}
+
+            {events.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">No hay eventos cargados todavía.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {events.map((evt) => (
+                  <div
+                    key={evt.id}
+                    id={`admin-evento-card-${evt.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-bold leading-tight truncate text-neutral-800">{evt.title}</span>
+                      <span className="text-[9px] font-mono text-gray-400">{evt.date} • {evt.time} • {evt.location}</span>
+                    </div>
+                    <button
+                      id={`btn-delete-evento-${evt.id}`}
+                      onClick={() => onDeleteEvento(evt.id)}
+                      title="Eliminar evento"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 9: EQUIPO / NOSOTROS */}
+        {activeTab === 'equipo' && (
+          <div id="admin-equipo-view" className="flex flex-col gap-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-1">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest">
+                Mesa Directiva / Equipo
+              </h4>
+              <button
+                id="btn-toggle-miembro-form"
+                onClick={() => {
+                  if (showMiembroForm) resetMiembro();
+                  setShowMiembroForm(prev => !prev);
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+              >
+                {showMiembroForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {showMiembroForm ? 'Cancelar' : 'Agregar integrante'}
+              </button>
+            </div>
+
+            {showMiembroForm && (
+              <form onSubmit={handleSubMiembro(onSubmitMiembro)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre y apellido</label>
+                  <input
+                    id="miembro-nombre-input"
+                    type="text"
+                    placeholder="Ej: Bautista Rossi"
+                    {...regMiembro('nombre')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsMiembro.nombre && <span className="text-[10px] text-[#CC0000] font-bold">{errorsMiembro.nombre.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Cargo</label>
+                  <input
+                    id="miembro-cargo-input"
+                    type="text"
+                    placeholder="Ej: Presidente (6to Nat)"
+                    {...regMiembro('cargo')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsMiembro.cargo && <span className="text-[10px] text-[#CC0000] font-bold">{errorsMiembro.cargo.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">URL de foto</label>
+                  <input
+                    id="miembro-foto-input"
+                    type="text"
+                    placeholder="https://..."
+                    {...regMiembro('foto')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsMiembro.foto && <span className="text-[10px] text-[#CC0000] font-bold">{errorsMiembro.foto.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Orden de aparición</label>
+                  <input
+                    id="miembro-orden-input"
+                    type="number"
+                    {...regMiembro('orden', { valueAsNumber: true })}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                  />
+                  {errorsMiembro.orden && <span className="text-[10px] text-[#CC0000] font-bold">{errorsMiembro.orden.message}</span>}
+                </div>
+
+                <button
+                  id="btn-miembro-submit"
+                  type="submit"
+                  className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Guardar Integrante
+                </button>
+              </form>
+            )}
+
+            {team.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">No hay integrantes cargados todavía.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {team.map((member) => (
+                  <div
+                    key={member.id}
+                    id={`admin-miembro-card-${member.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-gray-100 bg-gray-50">
+                      <img src={member.photo} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-bold leading-tight truncate text-neutral-800">{member.name}</span>
+                      <span className="text-[9px] font-mono text-gray-400 truncate">{member.role}</span>
+                    </div>
+                    <button
+                      id={`btn-delete-miembro-${member.id}`}
+                      onClick={() => onDeleteMiembro(member.id)}
+                      title="Eliminar integrante"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Trash className="w-4 h-4" />
                     </button>
                   </div>
                 ))}

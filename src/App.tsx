@@ -20,12 +20,16 @@ import {
   addDocumento,
   toggleDocumentoActivo,
   deleteDocumento,
+  getBono,
+  subscribeBono,
+  updateVentasCurso,
+  subscribeEventos,
+  createEvento,
+  deleteEvento,
+  subscribeEquipo,
+  createMiembro,
+  deleteMiembro,
 } from './lib/firestore';
-import {
-  initialBono,
-  initialEvents,
-  initialTeam,
-} from './data';
 import {
   NewsItem,
   Proposal,
@@ -34,7 +38,9 @@ import {
   ToastMessage,
   ProposalStatus,
   DocItem,
-  AuthorizedUser
+  AuthorizedUser,
+  EventItem,
+  TeamMember,
 } from './types';
 
 // Components
@@ -91,10 +97,14 @@ export default function App() {
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
 
-  // Data not yet migrated to Firestore (out of current scope)
-  const [bonoInfo, setBonoInfo] = useState<BonoInfo>(initialBono);
-  const [events] = useState(initialEvents);
-  const [team] = useState(initialTeam);
+  const [bonoInfo, setBonoInfo] = useState<BonoInfo | null>(null);
+  const [bonoLoading, setBonoLoading] = useState(true);
+
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [teamLoading, setTeamLoading] = useState(true);
 
   // Global UI States
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -130,6 +140,8 @@ export default function App() {
   // Live subscriptions to real-time collections, gated behind an authorized session
   useEffect(() => {
     if (!authorizedUser) return;
+    let unsubBono: (() => void) | undefined;
+    let cancelled = false;
 
     const unsubNoticias = subscribeNoticias((items) => {
       setNews(items);
@@ -143,16 +155,42 @@ export default function App() {
       setVotes(items);
       setVotesLoading(false);
     });
+    const unsubEventos = subscribeEventos((items) => {
+      setEvents(items);
+      setEventsLoading(false);
+    });
+    const unsubEquipo = subscribeEquipo((items) => {
+      setTeam(items);
+      setTeamLoading(false);
+    });
 
     setDocumentsLoading(true);
     setUsersLoading(true);
+    setBonoLoading(true);
     refetchDocuments().finally(() => setDocumentsLoading(false));
     refetchUsers().finally(() => setUsersLoading(false));
 
+    // getBono() seeds the config/ventas docs on first run, then we switch to realtime updates
+    getBono()
+      .then((info) => {
+        if (cancelled) return;
+        setBonoInfo(info);
+        setBonoLoading(false);
+        unsubBono = subscribeBono(setBonoInfo);
+      })
+      .catch(() => {
+        showToast('No se pudo cargar el Bono Contribución', 'error');
+        setBonoLoading(false);
+      });
+
     return () => {
+      cancelled = true;
       unsubNoticias();
       unsubPropuestas();
       unsubVotaciones();
+      unsubEventos();
+      unsubEquipo();
+      unsubBono?.();
     };
   }, [authorizedUser]);
 
@@ -275,19 +313,51 @@ export default function App() {
     }
   };
 
-  // 6. Update Bono Course Sales (Admin view) — not yet migrated to Firestore
-  const handleUpdateBonoSales = (course: string, sales: number) => {
-    setBonoInfo(prev => {
-      const updatedSales = prev.courseSales.map(item =>
-        item.course === course ? { ...item, sales } : item
-      );
-      const totalRaised = updatedSales.reduce((acc, curr) => acc + curr.sales, 0);
-      return {
-        ...prev,
-        courseSales: updatedSales.sort((a, b) => b.sales - a.sales),
-        totalRaised
-      };
-    });
+  // 6. Update Bono Course Sales (Admin view)
+  const handleUpdateBonoSales = async (course: string, sales: number) => {
+    try {
+      await updateVentasCurso(course, sales);
+    } catch {
+      showToast('No se pudieron actualizar las ventas del curso. Intentá de nuevo.', 'error');
+    }
+  };
+
+  // Eventos / Agenda (Admin view)
+  const handleCreateEvento = async (data: { titulo: string; descripcion: string; fecha: string; tipo: string }) => {
+    try {
+      await createEvento(data);
+      showToast('Evento agregado correctamente', 'success');
+    } catch {
+      showToast('No se pudo agregar el evento. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleDeleteEvento = async (id: string) => {
+    try {
+      await deleteEvento(id);
+      showToast('Evento eliminado', 'info');
+    } catch {
+      showToast('No se pudo eliminar el evento. Intentá de nuevo.', 'error');
+    }
+  };
+
+  // Equipo / Nosotros (Admin view)
+  const handleCreateMiembro = async (data: { nombre: string; cargo: string; foto: string; orden: number }) => {
+    try {
+      await createMiembro(data);
+      showToast('Integrante agregado correctamente', 'success');
+    } catch {
+      showToast('No se pudo agregar el integrante. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleDeleteMiembro = async (id: string) => {
+    try {
+      await deleteMiembro(id);
+      showToast('Integrante eliminado', 'info');
+    } catch {
+      showToast('No se pudo eliminar el integrante. Intentá de nuevo.', 'error');
+    }
   };
 
   // 7. Create custom Poll/Vote (Admin view)
@@ -498,7 +568,7 @@ export default function App() {
                   </div>
                 )}
 
-                {documentsLoading ? (
+                {documentsLoading || bonoLoading || eventsLoading || teamLoading || !bonoInfo ? (
                   <ScreenSkeleton />
                 ) : (
                   <MasScreen
@@ -517,7 +587,7 @@ export default function App() {
             )}
 
             {activeTab === 'admin' && isFirestoreAdmin && (
-              usersLoading ? <ScreenSkeleton /> : (
+              usersLoading || bonoLoading || !bonoInfo ? <ScreenSkeleton /> : (
                 <AdminPanel
                   proposals={proposalsWithMyVotes}
                   votes={votesWithMyVotes}
@@ -525,6 +595,8 @@ export default function App() {
                   bonoInfo={bonoInfo}
                   documents={documents}
                   users={users}
+                  events={events}
+                  team={team}
                   onUpdateProposalStatus={handleUpdateProposalStatus}
                   onPublishNews={handlePublishNews}
                   onUpdateBonoSales={handleUpdateBonoSales}
@@ -535,6 +607,10 @@ export default function App() {
                   onAddUser={handleAddUser}
                   onToggleUserActive={handleToggleUserActive}
                   onImportUsers={handleImportUsers}
+                  onCreateEvento={handleCreateEvento}
+                  onDeleteEvento={handleDeleteEvento}
+                  onCreateMiembro={handleCreateMiembro}
+                  onDeleteMiembro={handleDeleteMiembro}
                   onShowToast={showToast}
                 />
               )
