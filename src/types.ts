@@ -121,3 +121,8 @@ export interface ToastMessage {
   text: string;
   type: 'success' | 'error' | 'info';
 }
+
+export interface BannerConfig {
+  bannerActivo: boolean;
+  bannerTexto: string;
+}

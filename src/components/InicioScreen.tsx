@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NewsItem } from '../types';
-import { BannerConfig } from '../lib/firestore';
+import { NewsItem, BannerConfig } from '../types';
 import { Megaphone, X, Calendar, ArrowRight } from 'lucide-react';
 
 interface InicioScreenProps {

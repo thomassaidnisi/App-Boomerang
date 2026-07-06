@@ -1,46 +1,14 @@
-import { useEffect, useState } from 'react';
-import { signOut } from 'firebase/auth';
-import { auth } from './lib/firebase';
-import { useAuth } from './hooks/useAuth';
+import { useState } from 'react';
 import {
-  subscribeNoticias,
-  subscribePropuestas,
-  subscribeVotaciones,
-  createNoticia,
-  updateNoticia,
-  deleteNoticia,
-  createPropuesta,
-  updatePropuestaEstado,
-  updatePropuestaVotos,
-  createVotacion,
-  yaVoto,
-  registrarVoto,
-  getUsuariosAutorizados,
-  addUsuarioAutorizado,
-  updateUsuarioAutorizado,
-  getDocumentos,
-  addDocumento,
-  toggleDocumentoActivo,
-  deleteDocumento,
-  getBono,
-  subscribeBono,
-  updateVentasCurso,
-  updateFechaSorteo,
-  addPremio,
-  deletePremio,
-  subscribeEventos,
-  createEvento,
-  updateEvento,
-  deleteEvento,
-  subscribeEquipo,
-  createMiembro,
-  updateEquipo,
-  deleteMiembro,
-  getBanner,
-  subscribeBanner,
-  updateBanner,
-  BannerConfig,
-} from './lib/firestore';
+  initialNews,
+  initialProposals,
+  initialVotes,
+  initialBono,
+  initialDocs,
+  initialEvents,
+  initialTeam,
+  initialUsers,
+} from './data';
 import {
   NewsItem,
   Proposal,
@@ -52,6 +20,7 @@ import {
   AuthorizedUser,
   EventItem,
   TeamMember,
+  BannerConfig,
 } from './types';
 
 // Components
@@ -64,60 +33,48 @@ import { VotacionesScreen } from './components/VotacionesScreen';
 import { AsistenteScreen } from './components/AsistenteScreen';
 import { MasScreen } from './components/MasScreen';
 import { AdminPanel } from './components/AdminPanel';
-import { AuthFlow } from './components/AuthFlow';
 
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 
-// Simple pulsing skeleton block used while a screen's data is loading
-function ScreenSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 p-4 animate-pulse">
-      {[...Array(4)].map((_, i) => (
-        <div key={i} className="h-20 bg-gray-100 rounded-2xl" />
-      ))}
-    </div>
-  );
-}
+// DEMO BRANCH: no Firebase/Firestore dependency — everything runs on local mock
+// state so the app can be shown offline. Login is skipped entirely: we drop the
+// visitor straight in as this fixed example student.
+const DEMO_USER: AuthorizedUser = {
+  id: 'demo-student',
+  email: 'estudiante.demo@ija.edu.ar',
+  name: 'Estudiante Demo',
+  role: 'Estudiante',
+  course: '5°A',
+  active: true,
+};
+
+const fechaHoy = () =>
+  new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 
 export default function App() {
-  // Auth State (Firebase Auth + Firestore whitelist check)
-  const { user, authorizedUser, loading: authLoading, isAdmin: isFirestoreAdmin } = useAuth();
+  // authorizedUser is fixed to DEMO_USER for the whole session — login is skipped
+  const isAdmin = true; // demo: let visitors toggle into the admin panel to showcase it too
 
   const handleLogout = () => {
-    signOut(auth);
+    showToast('Modo demo: no hay una sesión real para cerrar', 'info');
   };
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType | 'admin'>('inicio');
 
-  // App Databases fetched from Firestore
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [proposalsLoading, setProposalsLoading] = useState(true);
-  const [myProposalVotes, setMyProposalVotes] = useState<Record<string, 'up' | 'down'>>({});
-
-  const [votes, setVotes] = useState<Vote[]>([]);
-  const [votesLoading, setVotesLoading] = useState(true);
-  const [myVoteMap, setMyVoteMap] = useState<Record<string, string>>({});
-
-  const [documents, setDocuments] = useState<DocItem[]>([]);
-  const [documentsLoading, setDocumentsLoading] = useState(true);
-
-  const [users, setUsers] = useState<AuthorizedUser[]>([]);
-  const [usersLoading, setUsersLoading] = useState(true);
-
-  const [bonoInfo, setBonoInfo] = useState<BonoInfo | null>(null);
-  const [bonoLoading, setBonoLoading] = useState(true);
-
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [eventsLoading, setEventsLoading] = useState(true);
-
-  const [team, setTeam] = useState<TeamMember[]>([]);
-  const [teamLoading, setTeamLoading] = useState(true);
-
-  const [banner, setBanner] = useState<BannerConfig | null>(null);
+  // App Databases — seeded from local mock data (src/data.ts), no Firestore involved
+  const [news, setNews] = useState<NewsItem[]>(initialNews);
+  const [proposals, setProposals] = useState<Proposal[]>(initialProposals);
+  const [votes, setVotes] = useState<Vote[]>(initialVotes);
+  const [bonoInfo, setBonoInfo] = useState<BonoInfo>(initialBono);
+  const [documents, setDocuments] = useState<DocItem[]>(initialDocs);
+  const [users, setUsers] = useState<AuthorizedUser[]>(initialUsers);
+  const [events, setEvents] = useState<EventItem[]>(initialEvents);
+  const [team, setTeam] = useState<TeamMember[]>(initialTeam);
+  const [banner, setBanner] = useState<BannerConfig>({
+    bannerActivo: true,
+    bannerTexto: '¡Bono Contribución disponible! Sorteá un Smart TV 43" y más premios. Solicitá tu talonario a tu delegado de curso. Todo recaudado va para el sonido.',
+  });
 
   // Global UI States
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -134,421 +91,297 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const refetchDocuments = async () => {
-    try {
-      setDocuments(await getDocumentos());
-    } catch {
-      showToast('No se pudieron cargar los documentos', 'error');
-    }
-  };
-
-  const refetchUsers = async () => {
-    try {
-      setUsers(await getUsuariosAutorizados());
-    } catch {
-      showToast('No se pudieron cargar los usuarios autorizados', 'error');
-    }
-  };
-
-  // Live subscriptions to real-time collections, gated behind an authorized session
-  useEffect(() => {
-    if (!authorizedUser) return;
-    let unsubBono: (() => void) | undefined;
-    let unsubBanner: (() => void) | undefined;
-    let cancelled = false;
-
-    const unsubNoticias = subscribeNoticias((items) => {
-      setNews(items);
-      setNewsLoading(false);
-    });
-    const unsubPropuestas = subscribePropuestas((items) => {
-      setProposals(items);
-      setProposalsLoading(false);
-    });
-    const unsubVotaciones = subscribeVotaciones((items) => {
-      setVotes(items);
-      setVotesLoading(false);
-    });
-    const unsubEventos = subscribeEventos((items) => {
-      setEvents(items);
-      setEventsLoading(false);
-    });
-    const unsubEquipo = subscribeEquipo((items) => {
-      setTeam(items);
-      setTeamLoading(false);
-    });
-
-    setDocumentsLoading(true);
-    setUsersLoading(true);
-    setBonoLoading(true);
-    refetchDocuments().finally(() => setDocumentsLoading(false));
-    refetchUsers().finally(() => setUsersLoading(false));
-
-    // getBono() seeds the config/ventas docs on first run, then we switch to realtime updates
-    getBono()
-      .then((info) => {
-        if (cancelled) return;
-        setBonoInfo(info);
-        setBonoLoading(false);
-        unsubBono = subscribeBono(setBonoInfo);
-      })
-      .catch(() => {
-        showToast('No se pudo cargar el Bono Contribución', 'error');
-        setBonoLoading(false);
-      });
-
-    // getBanner() seeds config/banner on first run, then we switch to realtime updates
-    getBanner()
-      .then((info) => {
-        if (cancelled) return;
-        setBanner(info);
-        unsubBanner = subscribeBanner(setBanner);
-      })
-      .catch(() => {
-        showToast('No se pudo cargar el banner destacado', 'error');
-      });
-
-    return () => {
-      cancelled = true;
-      unsubNoticias();
-      unsubPropuestas();
-      unsubVotaciones();
-      unsubEventos();
-      unsubEquipo();
-      unsubBono?.();
-      unsubBanner?.();
-    };
-  }, [authorizedUser]);
-
-  // Fetch which options the current user already voted, whenever the vote list changes
-  useEffect(() => {
-    if (!user || votes.length === 0) return;
-    let cancelled = false;
-
-    (async () => {
-      const entries = await Promise.all(
-        votes.map(async (v) => [v.id, await yaVoto(v.id, user.uid)] as const)
-      );
-      if (cancelled) return;
-      const map: Record<string, string> = {};
-      entries.forEach(([voteId, opcionId]) => {
-        if (opcionId) map[voteId] = opcionId;
-      });
-      setMyVoteMap(map);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, votes]);
-
-  // State Mutators / Action Handlers
+  // State Mutators / Action Handlers (all local — no network calls)
 
   // 1. Submit Proposal (Student View)
-  const handleCreateProposal = async (newProp: Omit<Proposal, 'id' | 'date' | 'upvotes' | 'downvotes' | 'userVote' | 'responses'>) => {
-    try {
-      await createPropuesta(newProp);
-      showToast('¡Tu propuesta fue enviada correctamente!', 'success');
-    } catch {
-      showToast('No se pudo enviar la propuesta. Intentá de nuevo.', 'error');
-    }
+  const handleCreateProposal = (newProp: Omit<Proposal, 'id' | 'date' | 'upvotes' | 'downvotes' | 'userVote' | 'responses'>) => {
+    const fresh: Proposal = {
+      ...newProp,
+      id: `prop-${Date.now()}`,
+      date: fechaHoy(),
+      upvotes: 0,
+      downvotes: 0,
+      userVote: null,
+      responses: []
+    };
+    setProposals(prev => [fresh, ...prev]);
+    showToast('¡Tu propuesta fue enviada correctamente!', 'success');
   };
 
   // 2. Upvote / Downvote Proposal
-  const handleVoteProposal = async (id: string, type: 'up' | 'down') => {
-    const proposal = proposals.find((p) => p.id === id);
-    if (!proposal) return;
+  const handleVoteProposal = (id: string, type: 'up' | 'down') => {
+    setProposals(prev => prev.map(p => {
+      if (p.id !== id) return p;
 
-    const currentVote = myProposalVotes[id] ?? null;
-    let upDiff = 0;
-    let downDiff = 0;
-    let nextVote: 'up' | 'down' | null = type;
+      let upDiff = 0;
+      let downDiff = 0;
+      let nextVote: 'up' | 'down' | null = type;
 
-    if (currentVote === type) {
-      upDiff = type === 'up' ? -1 : 0;
-      downDiff = type === 'down' ? -1 : 0;
-      nextVote = null;
-    } else {
-      if (currentVote === 'up') upDiff = -1;
-      if (currentVote === 'down') downDiff = -1;
-      if (type === 'up') upDiff += 1;
-      else downDiff += 1;
-    }
-
-    const nextUpvotes = proposal.upvotes + upDiff;
-    const nextDownvotes = proposal.downvotes + downDiff;
-
-    try {
-      await updatePropuestaVotos(id, nextUpvotes, nextDownvotes);
-      setMyProposalVotes((prev) => {
-        const next = { ...prev };
-        if (nextVote) next[id] = nextVote;
-        else delete next[id];
-        return next;
-      });
-      if (nextVote === null) {
+      if (p.userVote === type) {
+        upDiff = type === 'up' ? -1 : 0;
+        downDiff = type === 'down' ? -1 : 0;
+        nextVote = null;
         showToast('Voto removido', 'info');
-      } else if (type === 'up') {
-        showToast('¡Apoyaste esta propuesta! 👍', 'success');
       } else {
-        showToast('Votaste en contra 👎', 'info');
+        if (p.userVote === 'up') upDiff = -1;
+        if (p.userVote === 'down') downDiff = -1;
+
+        if (type === 'up') {
+          upDiff += 1;
+          showToast('¡Apoyaste esta propuesta! 👍', 'success');
+        } else {
+          downDiff += 1;
+          showToast('Votaste en contra 👎', 'info');
+        }
       }
-    } catch {
-      showToast('No se pudo registrar tu voto. Intentá de nuevo.', 'error');
-    }
+
+      return {
+        ...p,
+        upvotes: p.upvotes + upDiff,
+        downvotes: p.downvotes + downDiff,
+        userVote: nextVote
+      };
+    }));
   };
 
   // 3. Vote on a Plebiscito (Active Poll)
-  const handleCastVote = async (voteId: string, optionId: string) => {
-    if (!user) return;
-    if (myVoteMap[voteId]) return; // already voted
+  const handleCastVote = (voteId: string, optionId: string) => {
+    setVotes(prev => prev.map(v => {
+      if (v.id !== voteId) return v;
+      if (v.userVotedOptionId !== null) return v; // already voted
 
-    try {
-      await registrarVoto(voteId, user.uid, optionId);
-      setMyVoteMap((prev) => ({ ...prev, [voteId]: optionId }));
-      showToast('¡Voto registrado correctamente!', 'success');
-    } catch (err: any) {
-      showToast(err?.message || 'No se pudo registrar el voto. Intentá de nuevo.', 'error');
-    }
+      const updatedOptions = v.options.map(o =>
+        o.id === optionId ? { ...o, votes: o.votes + 1 } : o
+      );
+
+      return {
+        ...v,
+        options: updatedOptions,
+        totalVotes: v.totalVotes + 1,
+        userVotedOptionId: optionId
+      };
+    }));
+    showToast('¡Voto registrado correctamente!', 'success');
   };
 
   // 4. Update Proposal Status (Admin view)
-  const handleUpdateProposalStatus = async (id: string, status: ProposalStatus, responseText?: string) => {
-    try {
-      const respuesta = responseText && responseText.trim() !== ''
-        ? {
-            date: new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
-            responder: 'Mesa Directiva CEC Boomerang',
-            text: responseText.trim()
-          }
-        : undefined;
-      await updatePropuestaEstado(id, status, respuesta);
-      showToast('Propuesta actualizada correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar la propuesta. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateProposalStatus = (id: string, status: ProposalStatus, responseText?: string) => {
+    setProposals(prev => prev.map(p => {
+      if (p.id !== id) return p;
+
+      const updatedResponses = [...p.responses];
+      if (responseText !== undefined && responseText.trim() !== '') {
+        const respuesta = {
+          date: fechaHoy(),
+          responder: 'Mesa Directiva CEC Boomerang',
+          text: responseText.trim()
+        };
+        if (updatedResponses.length > 0) updatedResponses[0] = respuesta;
+        else updatedResponses.push(respuesta);
+      }
+
+      return { ...p, status, responses: updatedResponses };
+    }));
+    showToast('Propuesta actualizada correctamente', 'success');
   };
 
   // 5. Publish News (Admin view)
-  const handlePublishNews = async (newItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => {
-    try {
-      await createNoticia(newItem);
-      showToast('Noticia publicada correctamente', 'success');
-    } catch {
-      showToast('No se pudo publicar la noticia. Intentá de nuevo.', 'error');
-    }
+  const handlePublishNews = (newItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => {
+    const fresh: NewsItem = {
+      ...newItem,
+      id: `news-${Date.now()}`,
+      date: fechaHoy(),
+      featured: false
+    };
+    setNews(prev => [fresh, ...prev]);
+    showToast('Noticia publicada correctamente', 'success');
   };
 
-  const handleUpdateNews = async (id: string, data: Partial<NewsItem>) => {
-    try {
-      await updateNoticia(id, data);
-      showToast('Noticia actualizada correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar la noticia. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateNews = (id: string, data: Partial<NewsItem>) => {
+    setNews(prev => prev.map(n => n.id === id ? { ...n, ...data } : n));
+    showToast('Noticia actualizada correctamente', 'success');
   };
 
-  const handleDeleteNews = async (id: string) => {
-    try {
-      await deleteNoticia(id);
-      showToast('Noticia eliminada correctamente', 'success');
-    } catch {
-      showToast('No se pudo eliminar la noticia. Intentá de nuevo.', 'error');
-    }
+  const handleDeleteNews = (id: string) => {
+    setNews(prev => prev.filter(n => n.id !== id));
+    showToast('Noticia eliminada correctamente', 'success');
   };
 
   // 6. Update Bono Course Sales (Admin view)
-  const handleUpdateBonoSales = async (course: string, sales: number) => {
-    try {
-      await updateVentasCurso(course, sales);
-    } catch {
-      showToast('No se pudieron actualizar las ventas del curso. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateBonoSales = (course: string, sales: number) => {
+    setBonoInfo(prev => {
+      const exists = prev.courseSales.some(item => item.course === course);
+      const updatedSales = exists
+        ? prev.courseSales.map(item => item.course === course ? { ...item, sales } : item)
+        : [...prev.courseSales, { course, sales }];
+      const totalRaised = updatedSales.reduce((acc, curr) => acc + curr.sales, 0);
+      return {
+        ...prev,
+        courseSales: updatedSales.sort((a, b) => b.sales - a.sales),
+        totalRaised
+      };
+    });
+    showToast('Ventas actualizadas correctamente', 'success');
   };
 
-  const handleUpdateFechaSorteo = async (fecha: string) => {
-    try {
-      await updateFechaSorteo(fecha);
-      showToast('Fecha de sorteo actualizada correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar la fecha de sorteo. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateFechaSorteo = (fecha: string) => {
+    setBonoInfo(prev => ({ ...prev, drawDate: fecha }));
+    showToast('Fecha de sorteo actualizada correctamente', 'success');
   };
 
-  const handleAddPremio = async (premio: { title: string; description: string; image: string }) => {
-    try {
-      await addPremio(premio);
-      showToast('Premio agregado correctamente', 'success');
-    } catch {
-      showToast('No se pudo agregar el premio. Intentá de nuevo.', 'error');
-    }
+  const handleAddPremio = (premio: { title: string; description: string; image: string }) => {
+    setBonoInfo(prev => ({
+      ...prev,
+      prizes: [...prev.prizes, { ...premio, id: `prize-${Date.now()}` }]
+    }));
+    showToast('Premio agregado correctamente', 'success');
   };
 
-  const handleDeletePremio = async (id: string) => {
-    try {
-      await deletePremio(id);
-      showToast('Premio eliminado', 'info');
-    } catch {
-      showToast('No se pudo eliminar el premio. Intentá de nuevo.', 'error');
-    }
+  const handleDeletePremio = (id: string) => {
+    setBonoInfo(prev => ({ ...prev, prizes: prev.prizes.filter(p => p.id !== id) }));
+    showToast('Premio eliminado', 'info');
   };
 
   // Banner Destacado (Admin view)
-  const handleUpdateBanner = async (data: BannerConfig) => {
-    try {
-      await updateBanner(data);
-      showToast('Banner actualizado correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar el banner. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateBanner = (data: BannerConfig) => {
+    setBanner(data);
+    showToast('Banner actualizado correctamente', 'success');
   };
 
   // Eventos / Agenda (Admin view)
-  const handleCreateEvento = async (data: { titulo: string; descripcion: string; fecha: string; tipo: string }) => {
-    try {
-      await createEvento(data);
-      showToast('Evento agregado correctamente', 'success');
-    } catch {
-      showToast('No se pudo agregar el evento. Intentá de nuevo.', 'error');
-    }
+  const buildEventItem = (id: string, data: { titulo: string; descripcion: string; fecha: string; tipo: string }): EventItem => {
+    const fechaObj = new Date(data.fecha);
+    return {
+      id,
+      title: data.titulo,
+      description: data.descripcion,
+      date: fechaObj.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      time: fechaObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+      location: data.tipo,
+      fechaISO: data.fecha,
+      tipo: data.tipo,
+    };
   };
 
-  const handleUpdateEvento = async (id: string, data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string }>) => {
-    try {
-      await updateEvento(id, data);
-      showToast('Evento actualizado correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar el evento. Intentá de nuevo.', 'error');
-    }
+  const handleCreateEvento = (data: { titulo: string; descripcion: string; fecha: string; tipo: string }) => {
+    const fresh = buildEventItem(`event-${Date.now()}`, data);
+    setEvents(prev => [...prev, fresh].sort((a, b) =>
+      new Date(a.fechaISO || a.date).getTime() - new Date(b.fechaISO || b.date).getTime()
+    ));
+    showToast('Evento agregado correctamente', 'success');
   };
 
-  const handleDeleteEvento = async (id: string) => {
-    try {
-      await deleteEvento(id);
-      showToast('Evento eliminado', 'info');
-    } catch {
-      showToast('No se pudo eliminar el evento. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateEvento = (id: string, data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string }>) => {
+    setEvents(prev => prev.map(e => {
+      if (e.id !== id) return e;
+      const merged = buildEventItem(id, {
+        titulo: data.titulo ?? e.title,
+        descripcion: data.descripcion ?? e.description,
+        fecha: data.fecha ?? e.fechaISO ?? '',
+        tipo: data.tipo ?? e.tipo ?? '',
+      });
+      return merged;
+    }));
+    showToast('Evento actualizado correctamente', 'success');
+  };
+
+  const handleDeleteEvento = (id: string) => {
+    setEvents(prev => prev.filter(e => e.id !== id));
+    showToast('Evento eliminado', 'info');
   };
 
   // Equipo / Nosotros (Admin view)
-  const handleCreateMiembro = async (data: { nombre: string; cargo: string; foto: string; orden: number }) => {
-    try {
-      await createMiembro(data);
-      showToast('Integrante agregado correctamente', 'success');
-    } catch {
-      showToast('No se pudo agregar el integrante. Intentá de nuevo.', 'error');
-    }
+  const handleCreateMiembro = (data: { nombre: string; cargo: string; foto: string; orden: number }) => {
+    const fresh: TeamMember = { id: `team-${Date.now()}`, name: data.nombre, role: data.cargo, photo: data.foto, orden: data.orden };
+    setTeam(prev => [...prev, fresh].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)));
+    showToast('Integrante agregado correctamente', 'success');
   };
 
-  const handleUpdateMiembro = async (id: string, data: Partial<{ nombre: string; cargo: string; foto: string; orden: number }>) => {
-    try {
-      await updateEquipo(id, data);
-      showToast('Integrante actualizado correctamente', 'success');
-    } catch {
-      showToast('No se pudo actualizar el integrante. Intentá de nuevo.', 'error');
-    }
+  const handleUpdateMiembro = (id: string, data: Partial<{ nombre: string; cargo: string; foto: string; orden: number }>) => {
+    setTeam(prev => prev.map(m => m.id === id ? {
+      ...m,
+      name: data.nombre ?? m.name,
+      role: data.cargo ?? m.role,
+      photo: data.foto ?? m.photo,
+      orden: data.orden ?? m.orden,
+    } : m).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)));
+    showToast('Integrante actualizado correctamente', 'success');
   };
 
-  const handleDeleteMiembro = async (id: string) => {
-    try {
-      await deleteMiembro(id);
-      showToast('Integrante eliminado', 'info');
-    } catch {
-      showToast('No se pudo eliminar el integrante. Intentá de nuevo.', 'error');
-    }
+  const handleDeleteMiembro = (id: string) => {
+    setTeam(prev => prev.filter(m => m.id !== id));
+    showToast('Integrante eliminado', 'info');
   };
 
   // 7. Create custom Poll/Vote (Admin view)
-  const handleCreateVote = async (question: string, optionsText: string[], expiresDays: number) => {
-    try {
-      await createVotacion(question, optionsText, expiresDays);
-      showToast('Votación creada correctamente', 'success');
-    } catch {
-      showToast('No se pudo crear la votación. Intentá de nuevo.', 'error');
-    }
+  const handleCreateVote = (question: string, optionsText: string[], expiresDays: number) => {
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + expiresDays);
+
+    const fresh: Vote = {
+      id: `vote-${Date.now()}`,
+      question,
+      options: optionsText.map((t, idx) => ({ id: `opt-${Date.now()}-${idx}`, text: t, votes: 0 })),
+      totalVotes: 0,
+      expiresAt: expiry.toISOString(),
+      userVotedOptionId: null,
+      active: true
+    };
+    setVotes(prev => [fresh, ...prev]);
+    showToast('Votación creada correctamente', 'success');
   };
 
   // 8. Add Official Document (Admin view)
-  const handleAddDocument = async (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => {
-    try {
-      const size = fileSizeBytes > 1024 * 1024
+  const handleAddDocument = (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => {
+    const fresh: DocItem = {
+      id: `doc-${Date.now()}`,
+      title,
+      fileName,
+      fileType: fileType.toUpperCase(),
+      size: fileSizeBytes > 1024 * 1024
         ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`;
-      await addDocumento({ title, fileName, fileType: fileType.toUpperCase(), size, content });
-      await refetchDocuments();
-      showToast('Documento agregado correctamente', 'success');
-    } catch {
-      showToast('No se pudo agregar el documento. Intentá de nuevo.', 'error');
-    }
+        : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`,
+      date: fechaHoy(),
+      active: true,
+      content
+    };
+    setDocuments(prev => [fresh, ...prev]);
+    showToast('Documento agregado correctamente', 'success');
   };
 
   // 9. Toggle Document Active State (Admin view)
-  const handleToggleDocumentActive = async (id: string) => {
-    const current = documents.find((d) => d.id === id);
-    if (!current) return;
-    try {
-      await toggleDocumentoActivo(id, !current.active);
-      await refetchDocuments();
-    } catch {
-      showToast('No se pudo actualizar el documento. Intentá de nuevo.', 'error');
-    }
+  const handleToggleDocumentActive = (id: string) => {
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, active: !d.active } : d));
   };
 
   // 10. Delete Document (Admin view)
-  const handleDeleteDocument = async (id: string) => {
-    try {
-      await deleteDocumento(id);
-      await refetchDocuments();
-      showToast('Documento eliminado', 'info');
-    } catch {
-      showToast('No se pudo eliminar el documento. Intentá de nuevo.', 'error');
-    }
+  const handleDeleteDocument = (id: string) => {
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    showToast('Documento eliminado', 'info');
   };
 
   // 11. Add Authorized User (Admin view)
-  const handleAddUser = async (user: Omit<AuthorizedUser, 'id' | 'active'>) => {
-    try {
-      await addUsuarioAutorizado(user);
-      await refetchUsers();
-      showToast('Usuario agregado correctamente', 'success');
-    } catch {
-      showToast('No se pudo agregar el usuario. Intentá de nuevo.', 'error');
-    }
+  const handleAddUser = (user: Omit<AuthorizedUser, 'id' | 'active'>) => {
+    const fresh: AuthorizedUser = { ...user, id: `user-${Date.now()}`, active: true };
+    setUsers(prev => [fresh, ...prev]);
+    showToast('Usuario agregado correctamente', 'success');
   };
 
   // 12. Toggle Authorized User Active State (Admin view)
-  const handleToggleUserActive = async (id: string) => {
-    const current = users.find((u) => u.id === id);
-    if (!current) return;
-    try {
-      await updateUsuarioAutorizado(id, { active: !current.active });
-      await refetchUsers();
-    } catch {
-      showToast('No se pudo actualizar el usuario. Intentá de nuevo.', 'error');
-    }
+  const handleToggleUserActive = (id: string) => {
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, active: !u.active } : u));
   };
 
   // 13. Bulk Import Authorized Users from Excel/CSV (Admin view)
-  const handleImportUsers = async (imported: Omit<AuthorizedUser, 'id' | 'active'>[]) => {
-    try {
-      await Promise.all(imported.map((u) => addUsuarioAutorizado(u)));
-      await refetchUsers();
-      showToast(`${imported.length} usuarios importados correctamente`, 'success');
-    } catch {
-      showToast('No se pudieron importar los usuarios. Intentá de nuevo.', 'error');
-    }
+  const handleImportUsers = (imported: Omit<AuthorizedUser, 'id' | 'active'>[]) => {
+    const fresh: AuthorizedUser[] = imported.map((u, idx) => ({
+      ...u,
+      id: `user-${Date.now()}-${idx}`,
+      active: true
+    }));
+    setUsers(prev => [...fresh, ...prev]);
+    showToast(`${fresh.length} usuarios importados correctamente`, 'success');
   };
-
-  const proposalsWithMyVotes = proposals.map((p) => ({
-    ...p,
-    userVote: myProposalVotes[p.id] ?? null,
-  }));
-
-  const votesWithMyVotes = votes.map((v) => ({
-    ...v,
-    userVotedOptionId: myVoteMap[v.id] ?? null,
-  }));
 
   return (
     <div
@@ -571,14 +404,7 @@ export default function App() {
             </div>
           </div>
 
-          {authLoading ? (
-            <div className="flex items-center justify-center h-full bg-white">
-              <span className="text-xs font-bold text-gray-400 animate-pulse">Cargando...</span>
-            </div>
-          ) : !authorizedUser ? (
-            <AuthFlow />
-          ) : (
-          <>
+          {/* DEMO: login is skipped entirely — always signed in as DEMO_USER */}
           {/* Dynamic header per screen */}
           {activeTab === 'inicio' ? (
             <Header isHome={true} />
@@ -614,32 +440,26 @@ export default function App() {
           {/* Inside App Screens layout */}
           <main className="flex-1 overflow-hidden relative bg-gray-50 flex flex-col">
             {activeTab === 'inicio' && (
-              newsLoading ? <ScreenSkeleton /> : (
-                <InicioScreen
-                  news={news}
-                  banner={banner}
-                  onOpenNews={(item) => setActiveNews(item)}
-                />
-              )
+              <InicioScreen
+                news={news}
+                banner={banner}
+                onOpenNews={(item) => setActiveNews(item)}
+              />
             )}
 
             {activeTab === 'propuestas' && (
-              proposalsLoading ? <ScreenSkeleton /> : (
-                <PropuestasScreen
-                  proposals={proposalsWithMyVotes}
-                  onCreateProposal={handleCreateProposal}
-                  onVoteProposal={handleVoteProposal}
-                />
-              )
+              <PropuestasScreen
+                proposals={proposals}
+                onCreateProposal={handleCreateProposal}
+                onVoteProposal={handleVoteProposal}
+              />
             )}
 
             {activeTab === 'votaciones' && (
-              votesLoading ? <ScreenSkeleton /> : (
-                <VotacionesScreen
-                  votes={votesWithMyVotes}
-                  onCastVote={handleCastVote}
-                />
-              )
+              <VotacionesScreen
+                votes={votes}
+                onCastVote={handleCastVote}
+              />
             )}
 
             {activeTab === 'asistente' && (
@@ -668,61 +488,55 @@ export default function App() {
                   </div>
                 )}
 
-                {documentsLoading || bonoLoading || eventsLoading || teamLoading || !bonoInfo ? (
-                  <ScreenSkeleton />
-                ) : (
-                  <MasScreen
-                    documents={documents.filter(d => d.active)}
-                    events={events}
-                    team={team}
-                    bonoInfo={bonoInfo}
-                    isAdminMode={isAdminMode}
-                    onToggleAdmin={setIsAdminMode}
-                    onShowToast={showToast}
-                    onLogout={handleLogout}
-                    canAccessAdmin={isFirestoreAdmin}
-                  />
-                )}
+                <MasScreen
+                  documents={documents.filter(d => d.active)}
+                  events={events}
+                  team={team}
+                  bonoInfo={bonoInfo}
+                  isAdminMode={isAdminMode}
+                  onToggleAdmin={setIsAdminMode}
+                  onShowToast={showToast}
+                  onLogout={handleLogout}
+                  canAccessAdmin={isAdmin}
+                />
               </div>
             )}
 
-            {activeTab === 'admin' && isFirestoreAdmin && (
-              usersLoading || bonoLoading || !bonoInfo || !banner ? <ScreenSkeleton /> : (
-                <AdminPanel
-                  proposals={proposalsWithMyVotes}
-                  votes={votesWithMyVotes}
-                  news={news}
-                  bonoInfo={bonoInfo}
-                  documents={documents}
-                  users={users}
-                  events={events}
-                  team={team}
-                  banner={banner}
-                  onUpdateProposalStatus={handleUpdateProposalStatus}
-                  onPublishNews={handlePublishNews}
-                  onUpdateNews={handleUpdateNews}
-                  onDeleteNews={handleDeleteNews}
-                  onUpdateBonoSales={handleUpdateBonoSales}
-                  onUpdateFechaSorteo={handleUpdateFechaSorteo}
-                  onAddPremio={handleAddPremio}
-                  onDeletePremio={handleDeletePremio}
-                  onUpdateBanner={handleUpdateBanner}
-                  onCreateVote={handleCreateVote}
-                  onAddDocument={handleAddDocument}
-                  onToggleDocumentActive={handleToggleDocumentActive}
-                  onDeleteDocument={handleDeleteDocument}
-                  onAddUser={handleAddUser}
-                  onToggleUserActive={handleToggleUserActive}
-                  onImportUsers={handleImportUsers}
-                  onCreateEvento={handleCreateEvento}
-                  onUpdateEvento={handleUpdateEvento}
-                  onDeleteEvento={handleDeleteEvento}
-                  onCreateMiembro={handleCreateMiembro}
-                  onUpdateMiembro={handleUpdateMiembro}
-                  onDeleteMiembro={handleDeleteMiembro}
-                  onShowToast={showToast}
-                />
-              )
+            {activeTab === 'admin' && isAdmin && (
+              <AdminPanel
+                proposals={proposals}
+                votes={votes}
+                news={news}
+                bonoInfo={bonoInfo}
+                documents={documents}
+                users={users}
+                events={events}
+                team={team}
+                banner={banner}
+                onUpdateProposalStatus={handleUpdateProposalStatus}
+                onPublishNews={handlePublishNews}
+                onUpdateNews={handleUpdateNews}
+                onDeleteNews={handleDeleteNews}
+                onUpdateBonoSales={handleUpdateBonoSales}
+                onUpdateFechaSorteo={handleUpdateFechaSorteo}
+                onAddPremio={handleAddPremio}
+                onDeletePremio={handleDeletePremio}
+                onUpdateBanner={handleUpdateBanner}
+                onCreateVote={handleCreateVote}
+                onAddDocument={handleAddDocument}
+                onToggleDocumentActive={handleToggleDocumentActive}
+                onDeleteDocument={handleDeleteDocument}
+                onAddUser={handleAddUser}
+                onToggleUserActive={handleToggleUserActive}
+                onImportUsers={handleImportUsers}
+                onCreateEvento={handleCreateEvento}
+                onUpdateEvento={handleUpdateEvento}
+                onDeleteEvento={handleDeleteEvento}
+                onCreateMiembro={handleCreateMiembro}
+                onUpdateMiembro={handleUpdateMiembro}
+                onDeleteMiembro={handleDeleteMiembro}
+                onShowToast={showToast}
+              />
             )}
           </main>
 
@@ -747,8 +561,6 @@ export default function App() {
               onChangeTab={(tab) => setActiveTab(tab)}
               isAdminMode={isAdminMode}
             />
-          )}
-          </>
           )}
 
           {/* Phone Bottom notch indicator */}
