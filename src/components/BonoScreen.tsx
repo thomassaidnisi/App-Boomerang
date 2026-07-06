@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BonoInfo } from '../types';
+import { BONO_CURSOS } from '../lib/bonoCursos';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
-import { Ticket, Gift, Trophy, Calendar, Sparkles, TrendingUp } from 'lucide-react';
+import { Ticket, Gift, Trophy, Calendar, Sparkles, TrendingUp, Rocket } from 'lucide-react';
 
 interface BonoScreenProps {
   bonoInfo: BonoInfo;
@@ -9,9 +10,14 @@ interface BonoScreenProps {
 
 export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
   const [daysLeft, setDaysLeft] = useState('');
+  const hasFecha = !!bonoInfo.drawDate;
 
-  // Sorteo countdown (14 de Agosto, 2026)
   useEffect(() => {
+    if (!hasFecha) {
+      setDaysLeft('');
+      return;
+    }
+
     const updateCountdown = () => {
       const target = new Date(bonoInfo.drawDate).getTime();
       const now = new Date().getTime();
@@ -24,14 +30,22 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      
+
       setDaysLeft(`Faltan ${days} días y ${hours} horas`);
     };
 
     updateCountdown();
     const timer = setInterval(updateCountdown, 60000); // Update every minute
     return () => clearInterval(timer);
-  }, [bonoInfo.drawDate]);
+  }, [bonoInfo.drawDate, hasFecha]);
+
+  const fechaSorteoLabel = hasFecha
+    ? new Date(bonoInfo.drawDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })
+    : 'A confirmar';
+
+  const fechaSorteoCompleta = hasFecha
+    ? new Date(bonoInfo.drawDate).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    : 'Fecha a confirmar';
 
   const percentRaised = Math.min(
     Math.round((bonoInfo.totalRaised / bonoInfo.goal) * 100),
@@ -46,11 +60,13 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
     }).format(val);
   };
 
-  // Format Recharts data (shorten labels for mobile responsiveness)
-  const chartData = bonoInfo.courseSales.map(item => ({
-    ...item,
-    shortCourse: item.course.replace(' Año ', '°').replace(' Naturales', ' Nat').replace(' Economía', ' Eco').replace(' Sociales', ' Soc').replace(' Comunicación', ' Com'),
-  }));
+  // Use the canonical IJA course list so every course shows even with $0, with full names (no truncation)
+  const chartData = BONO_CURSOS.map(course => ({
+    course,
+    sales: bonoInfo.courseSales.find(cs => cs.course === course)?.sales ?? 0,
+  })).sort((a, b) => b.sales - a.sales);
+
+  const hasSales = chartData.some(c => c.sales > 0);
 
   // Recharts custom Tooltip style
   const CustomTooltip = ({ active, payload }: any) => {
@@ -131,13 +147,13 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
           </div>
           <div className="flex flex-col">
             <span className="text-[9px] text-red-200 font-bold uppercase tracking-wider">FECHA DE SORTEO</span>
-            <span className="text-sm font-bold font-mono text-white">14 de Agosto</span>
+            <span className="text-sm font-bold font-mono text-white">{fechaSorteoLabel}</span>
           </div>
         </div>
       </div>
 
       {/* DRAW COUNTDOWN BANNER */}
-      <div 
+      <div
         id="draw-countdown-box"
         className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm"
       >
@@ -147,12 +163,12 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
           </div>
           <div className="flex flex-col">
             <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">SORTEO EN VIVO IJA</span>
-            <span className="text-xs font-extrabold text-neutral-800">Viernes 14 de Agosto • 20:00 hs</span>
+            <span className="text-xs font-extrabold text-neutral-800 capitalize">{fechaSorteoCompleta}</span>
           </div>
         </div>
         <div className="text-right">
           <span className="inline-flex items-center gap-1 bg-red-50 border border-red-100 text-[#CC0000] text-[10px] font-extrabold px-2.5 py-1 rounded-full font-mono uppercase tracking-wide">
-            {daysLeft}
+            {hasFecha ? daysLeft : 'Fecha a confirmar'}
           </span>
         </div>
       </div>
@@ -213,65 +229,74 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
         </div>
         
         <p className="text-[10px] text-gray-400 leading-relaxed pl-1 mb-2">
-          ¡El curso que recaude el mayor monto en bonos gana un asado/merienda escolar completa patrocinada por el Centro! 🍖
+          El curso que más recaude gana un premio especial del Centro de Estudiantes 🏆
         </p>
 
-        {/* Responsive Recharts container */}
-        <div id="bono-leaderboard-chart" className="w-full h-48 mt-1">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              layout="vertical"
-              margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" horizontal={true} vertical={false} />
-              <XAxis 
-                type="number" 
-                tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'JetBrains Mono' }} 
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(val) => `$${val/1000}k`}
-              />
-              <YAxis 
-                type="category" 
-                dataKey="shortCourse" 
-                tick={{ fill: '#1F2937', fontSize: 10, fontWeight: 'bold' }} 
-                axisLine={false}
-                tickLine={false}
-                width={80}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(204,0,0,0.03)' }} />
-              <Bar 
-                dataKey="sales" 
-                radius={[0, 4, 4, 0]}
-                barSize={12}
-              >
-                {chartData.map((entry, index) => {
-                  const isWinner = index === 0;
-                  return (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={isWinner ? '#CC0000' : index < 3 ? '#990000' : '#d1d5db'} 
-                    />
-                  );
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Winner status badge */}
-        {chartData.length > 0 && (
-          <div className="mt-2 bg-red-50 border border-red-100 rounded-xl p-3 flex items-center gap-3">
-            <div className="bg-[#CC0000] p-1.5 rounded-xl text-white">
-              <Trophy className="w-4 h-4 text-white" />
-            </div>
-            <div className="flex-1 flex flex-col">
-              <span className="text-[9px] text-[#CC0000] font-extrabold uppercase tracking-widest">Puntero actual de la copa</span>
-              <span className="text-xs font-bold text-neutral-800">{chartData[0].course}</span>
-            </div>
-            <span className="text-xs font-mono font-black text-[#CC0000]">{formatCurrency(chartData[0].sales)}</span>
+        {!hasSales ? (
+          <div id="bono-sales-not-started" className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+            <Rocket className="w-8 h-8 text-[#CC0000]/40" />
+            <span className="text-xs font-bold text-neutral-600 max-w-[240px]">
+              ¡Las ventas aún no comenzaron. ¡Que empiece la competencia! 🚀
+            </span>
           </div>
+        ) : (
+          <>
+            {/* Responsive Recharts container */}
+            <div id="bono-leaderboard-chart" className="w-full h-56 mt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartData}
+                  layout="vertical"
+                  margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" horizontal={true} vertical={false} />
+                  <XAxis
+                    type="number"
+                    tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'JetBrains Mono' }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(val) => `$${val/1000}k`}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="course"
+                    tick={{ fill: '#1F2937', fontSize: 10, fontWeight: 'bold' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={110}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(204,0,0,0.03)' }} />
+                  <Bar
+                    dataKey="sales"
+                    radius={[0, 4, 4, 0]}
+                    barSize={12}
+                  >
+                    {chartData.map((entry, index) => {
+                      const isWinner = index === 0;
+                      return (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={isWinner ? '#CC0000' : index < 3 ? '#990000' : '#d1d5db'}
+                        />
+                      );
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Winner status badge */}
+            <div className="mt-2 bg-red-50 border border-red-100 rounded-xl p-3 flex items-center gap-3">
+              <div className="bg-[#CC0000] p-1.5 rounded-xl text-white">
+                <Trophy className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1 flex flex-col">
+                <span className="text-[9px] text-[#CC0000] font-extrabold uppercase tracking-widest">Puntero actual de la copa</span>
+                <span className="text-xs font-bold text-neutral-800">{chartData[0].course}</span>
+              </div>
+              <span className="text-xs font-mono font-black text-[#CC0000]">{formatCurrency(chartData[0].sales)}</span>
+            </div>
+          </>
         )}
       </div>
 

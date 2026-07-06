@@ -342,6 +342,24 @@ export async function updateVentasCurso(curso: string, cantidad: number): Promis
   await setDoc(ventaRef, { curso, division: '', cantidad }, { merge: true });
 }
 
+export async function updateFechaSorteo(fechaSorteo: string): Promise<void> {
+  await updateDoc(bonoConfigRef, { fechaSorteo });
+}
+
+export async function addPremio(premio: Omit<BonoInfo['prizes'][number], 'id'>): Promise<void> {
+  await seedBonoIfMissing();
+  const configSnap = await getDoc(bonoConfigRef);
+  const config = configSnap.data() as { premios: BonoInfo['prizes'] };
+  const nuevoPremio = { ...premio, id: `prize-${Date.now()}` };
+  await updateDoc(bonoConfigRef, { premios: [...(config.premios || []), nuevoPremio] });
+}
+
+export async function deletePremio(id: string): Promise<void> {
+  const configSnap = await getDoc(bonoConfigRef);
+  const config = configSnap.data() as { premios: BonoInfo['prizes'] };
+  await updateDoc(bonoConfigRef, { premios: (config.premios || []).filter((p) => p.id !== id) });
+}
+
 // ---------------------------------------------------------------------------
 // Eventos / Agenda
 // ---------------------------------------------------------------------------
@@ -357,6 +375,8 @@ function eventoDocToItem(id: string, data: any): EventItem {
     date: fechaObj.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }),
     time: fechaObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     location: data.tipo,
+    fechaISO: data.fecha,
+    tipo: data.tipo,
   };
 }
 
@@ -383,6 +403,13 @@ export async function createEvento(data: {
   return ref.id;
 }
 
+export async function updateEvento(
+  id: string,
+  data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string }>
+): Promise<void> {
+  await updateDoc(doc(db, 'eventos', id), data);
+}
+
 export async function deleteEvento(id: string): Promise<void> {
   await deleteDoc(doc(db, 'eventos', id));
 }
@@ -399,6 +426,7 @@ function miembroDocToItem(id: string, data: any): TeamMember {
     name: data.nombre,
     role: data.cargo,
     photo: data.foto,
+    orden: data.orden,
   };
 }
 
@@ -434,4 +462,39 @@ export async function updateEquipo(
 
 export async function deleteMiembro(id: string): Promise<void> {
   await deleteDoc(doc(db, 'equipo', id));
+}
+
+// ---------------------------------------------------------------------------
+// Banner Destacado (Inicio)
+// ---------------------------------------------------------------------------
+
+export interface BannerConfig {
+  bannerActivo: boolean;
+  bannerTexto: string;
+}
+
+const bannerConfigRef = doc(db, 'config', 'banner');
+
+const DEFAULT_BANNER: BannerConfig = {
+  bannerActivo: true,
+  bannerTexto: '¡Bono Contribución disponible! Sorteá un Smart TV 43" y más premios. Solicitá tu talonario a tu delegado de curso. Todo recaudado va para el sonido.',
+};
+
+export async function getBanner(): Promise<BannerConfig> {
+  const snap = await getDoc(bannerConfigRef);
+  if (!snap.exists()) {
+    await setDoc(bannerConfigRef, DEFAULT_BANNER);
+    return DEFAULT_BANNER;
+  }
+  return snap.data() as BannerConfig;
+}
+
+export function subscribeBanner(onChange: (banner: BannerConfig) => void): Unsubscribe {
+  return onSnapshot(bannerConfigRef, (snap) => {
+    if (snap.exists()) onChange(snap.data() as BannerConfig);
+  });
+}
+
+export async function updateBanner(data: BannerConfig): Promise<void> {
+  await setDoc(bannerConfigRef, data, { merge: true });
 }

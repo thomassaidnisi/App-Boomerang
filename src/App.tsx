@@ -7,6 +7,8 @@ import {
   subscribePropuestas,
   subscribeVotaciones,
   createNoticia,
+  updateNoticia,
+  deleteNoticia,
   createPropuesta,
   updatePropuestaEstado,
   updatePropuestaVotos,
@@ -23,12 +25,21 @@ import {
   getBono,
   subscribeBono,
   updateVentasCurso,
+  updateFechaSorteo,
+  addPremio,
+  deletePremio,
   subscribeEventos,
   createEvento,
+  updateEvento,
   deleteEvento,
   subscribeEquipo,
   createMiembro,
+  updateEquipo,
   deleteMiembro,
+  getBanner,
+  subscribeBanner,
+  updateBanner,
+  BannerConfig,
 } from './lib/firestore';
 import {
   NewsItem,
@@ -106,6 +117,8 @@ export default function App() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [teamLoading, setTeamLoading] = useState(true);
 
+  const [banner, setBanner] = useState<BannerConfig | null>(null);
+
   // Global UI States
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [activeNews, setActiveNews] = useState<NewsItem | null>(null);
@@ -141,6 +154,7 @@ export default function App() {
   useEffect(() => {
     if (!authorizedUser) return;
     let unsubBono: (() => void) | undefined;
+    let unsubBanner: (() => void) | undefined;
     let cancelled = false;
 
     const unsubNoticias = subscribeNoticias((items) => {
@@ -183,6 +197,17 @@ export default function App() {
         setBonoLoading(false);
       });
 
+    // getBanner() seeds config/banner on first run, then we switch to realtime updates
+    getBanner()
+      .then((info) => {
+        if (cancelled) return;
+        setBanner(info);
+        unsubBanner = subscribeBanner(setBanner);
+      })
+      .catch(() => {
+        showToast('No se pudo cargar el banner destacado', 'error');
+      });
+
     return () => {
       cancelled = true;
       unsubNoticias();
@@ -191,6 +216,7 @@ export default function App() {
       unsubEventos();
       unsubEquipo();
       unsubBono?.();
+      unsubBanner?.();
     };
   }, [authorizedUser]);
 
@@ -313,12 +339,67 @@ export default function App() {
     }
   };
 
+  const handleUpdateNews = async (id: string, data: Partial<NewsItem>) => {
+    try {
+      await updateNoticia(id, data);
+      showToast('Noticia actualizada correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar la noticia. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleDeleteNews = async (id: string) => {
+    try {
+      await deleteNoticia(id);
+      showToast('Noticia eliminada correctamente', 'success');
+    } catch {
+      showToast('No se pudo eliminar la noticia. Intentá de nuevo.', 'error');
+    }
+  };
+
   // 6. Update Bono Course Sales (Admin view)
   const handleUpdateBonoSales = async (course: string, sales: number) => {
     try {
       await updateVentasCurso(course, sales);
     } catch {
       showToast('No se pudieron actualizar las ventas del curso. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleUpdateFechaSorteo = async (fecha: string) => {
+    try {
+      await updateFechaSorteo(fecha);
+      showToast('Fecha de sorteo actualizada correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar la fecha de sorteo. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleAddPremio = async (premio: { title: string; description: string; image: string }) => {
+    try {
+      await addPremio(premio);
+      showToast('Premio agregado correctamente', 'success');
+    } catch {
+      showToast('No se pudo agregar el premio. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleDeletePremio = async (id: string) => {
+    try {
+      await deletePremio(id);
+      showToast('Premio eliminado', 'info');
+    } catch {
+      showToast('No se pudo eliminar el premio. Intentá de nuevo.', 'error');
+    }
+  };
+
+  // Banner Destacado (Admin view)
+  const handleUpdateBanner = async (data: BannerConfig) => {
+    try {
+      await updateBanner(data);
+      showToast('Banner actualizado correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar el banner. Intentá de nuevo.', 'error');
     }
   };
 
@@ -329,6 +410,15 @@ export default function App() {
       showToast('Evento agregado correctamente', 'success');
     } catch {
       showToast('No se pudo agregar el evento. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleUpdateEvento = async (id: string, data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string }>) => {
+    try {
+      await updateEvento(id, data);
+      showToast('Evento actualizado correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar el evento. Intentá de nuevo.', 'error');
     }
   };
 
@@ -348,6 +438,15 @@ export default function App() {
       showToast('Integrante agregado correctamente', 'success');
     } catch {
       showToast('No se pudo agregar el integrante. Intentá de nuevo.', 'error');
+    }
+  };
+
+  const handleUpdateMiembro = async (id: string, data: Partial<{ nombre: string; cargo: string; foto: string; orden: number }>) => {
+    try {
+      await updateEquipo(id, data);
+      showToast('Integrante actualizado correctamente', 'success');
+    } catch {
+      showToast('No se pudo actualizar el integrante. Intentá de nuevo.', 'error');
     }
   };
 
@@ -518,6 +617,7 @@ export default function App() {
               newsLoading ? <ScreenSkeleton /> : (
                 <InicioScreen
                   news={news}
+                  banner={banner}
                   onOpenNews={(item) => setActiveNews(item)}
                 />
               )
@@ -543,7 +643,7 @@ export default function App() {
             )}
 
             {activeTab === 'asistente' && (
-              <AsistenteScreen />
+              <AsistenteScreen documentos={documents.filter(d => d.active)} />
             )}
 
             {activeTab === 'mas' && (
@@ -587,7 +687,7 @@ export default function App() {
             )}
 
             {activeTab === 'admin' && isFirestoreAdmin && (
-              usersLoading || bonoLoading || !bonoInfo ? <ScreenSkeleton /> : (
+              usersLoading || bonoLoading || !bonoInfo || !banner ? <ScreenSkeleton /> : (
                 <AdminPanel
                   proposals={proposalsWithMyVotes}
                   votes={votesWithMyVotes}
@@ -597,9 +697,16 @@ export default function App() {
                   users={users}
                   events={events}
                   team={team}
+                  banner={banner}
                   onUpdateProposalStatus={handleUpdateProposalStatus}
                   onPublishNews={handlePublishNews}
+                  onUpdateNews={handleUpdateNews}
+                  onDeleteNews={handleDeleteNews}
                   onUpdateBonoSales={handleUpdateBonoSales}
+                  onUpdateFechaSorteo={handleUpdateFechaSorteo}
+                  onAddPremio={handleAddPremio}
+                  onDeletePremio={handleDeletePremio}
+                  onUpdateBanner={handleUpdateBanner}
                   onCreateVote={handleCreateVote}
                   onAddDocument={handleAddDocument}
                   onToggleDocumentActive={handleToggleDocumentActive}
@@ -608,8 +715,10 @@ export default function App() {
                   onToggleUserActive={handleToggleUserActive}
                   onImportUsers={handleImportUsers}
                   onCreateEvento={handleCreateEvento}
+                  onUpdateEvento={handleUpdateEvento}
                   onDeleteEvento={handleDeleteEvento}
                   onCreateMiembro={handleCreateMiembro}
+                  onUpdateMiembro={handleUpdateMiembro}
                   onDeleteMiembro={handleDeleteMiembro}
                   onShowToast={showToast}
                 />

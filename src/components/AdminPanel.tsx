@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Proposal, Vote, NewsItem, BonoInfo, ProposalStatus, DocItem, AuthorizedUser, UserRole, EventItem, TeamMember } from '../types';
-import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Check, X, Megaphone, Edit3, FilePlus2, Users, Search, FileSpreadsheet, Upload, File as FileIcon, Loader2, CalendarPlus, UserPlus } from 'lucide-react';
+import { BannerConfig } from '../lib/firestore';
+import { LayoutDashboard, FileText, Newspaper, BarChart2, CheckSquare, Save, Plus, Trash, Trash2, Check, X, Megaphone, Edit3, FilePlus2, Users, Search, FileSpreadsheet, Upload, File as FileIcon, Loader2, CalendarPlus, UserPlus, Pencil, Gift } from 'lucide-react';
 import { ImportUsersDialog } from './ImportUsersDialog';
 import { extractTextFromFile, ExtractedFileType } from '../lib/fileTextExtractor';
+import { BONO_COURSE_GROUPS } from '../lib/bonoCursos';
 
 interface AdminPanelProps {
   proposals: Proposal[];
@@ -16,9 +18,16 @@ interface AdminPanelProps {
   users: AuthorizedUser[];
   events: EventItem[];
   team: TeamMember[];
+  banner: BannerConfig;
   onUpdateProposalStatus: (id: string, status: ProposalStatus, responseText?: string) => void;
   onPublishNews: (newsItem: Omit<NewsItem, 'id' | 'date' | 'featured'>) => void;
+  onUpdateNews: (id: string, data: Partial<NewsItem>) => void;
+  onDeleteNews: (id: string) => void;
+  onUpdateBanner: (data: BannerConfig) => void;
   onUpdateBonoSales: (course: string, sales: number) => void;
+  onUpdateFechaSorteo: (fecha: string) => void;
+  onAddPremio: (premio: { title: string; description: string; image: string }) => void;
+  onDeletePremio: (id: string) => void;
   onCreateVote: (question: string, options: string[], expiresDays: number) => void;
   onAddDocument: (title: string, fileName: string, fileType: string, content: string, fileSizeBytes: number) => void;
   onToggleDocumentActive: (id: string) => void;
@@ -27,8 +36,10 @@ interface AdminPanelProps {
   onToggleUserActive: (id: string) => void;
   onImportUsers: (users: Omit<AuthorizedUser, 'id' | 'active'>[]) => void;
   onCreateEvento: (data: { titulo: string; descripcion: string; fecha: string; tipo: string }) => void;
+  onUpdateEvento: (id: string, data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string }>) => void;
   onDeleteEvento: (id: string) => void;
   onCreateMiembro: (data: { nombre: string; cargo: string; foto: string; orden: number }) => void;
+  onUpdateMiembro: (id: string, data: Partial<{ nombre: string; cargo: string; foto: string; orden: number }>) => void;
   onDeleteMiembro: (id: string) => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
@@ -78,6 +89,14 @@ const miembroSchema = z.object({
   orden: z.number().min(0, 'Mínimo 0'),
 });
 
+const premioSchema = z.object({
+  title: z.string().min(3, 'Mínimo 3 caracteres').max(80, 'Máximo 80 caracteres'),
+  description: z.string().min(10, 'Mínimo 10 caracteres').max(200, 'Máximo 200 caracteres'),
+  // TODO: por ahora se carga por URL; habilitar subida directa de archivos
+  // cuando se configure Firebase Storage para el proyecto
+  image: z.string().url('Ingresá una URL de imagen válida'),
+});
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   proposals,
   votes,
@@ -87,9 +106,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   users,
   events,
   team,
+  banner,
   onUpdateProposalStatus,
   onPublishNews,
+  onUpdateNews,
+  onDeleteNews,
+  onUpdateBanner,
   onUpdateBonoSales,
+  onUpdateFechaSorteo,
+  onAddPremio,
+  onDeletePremio,
   onCreateVote,
   onAddDocument,
   onToggleDocumentActive,
@@ -98,8 +124,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onToggleUserActive,
   onImportUsers,
   onCreateEvento,
+  onUpdateEvento,
   onDeleteEvento,
   onCreateMiembro,
+  onUpdateMiembro,
   onDeleteMiembro,
   onShowToast,
 }) => {
@@ -111,6 +139,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEventoForm, setShowEventoForm] = useState(false);
   const [showMiembroForm, setShowMiembroForm] = useState(false);
+  const [newsToDelete, setNewsToDelete] = useState<NewsItem | null>(null);
+  const [newsToEdit, setNewsToEdit] = useState<NewsItem | null>(null);
+  const [eventoToDelete, setEventoToDelete] = useState<EventItem | null>(null);
+  const [eventoToEdit, setEventoToEdit] = useState<EventItem | null>(null);
+  const [miembroToDelete, setMiembroToDelete] = useState<TeamMember | null>(null);
+  const [miembroToEdit, setMiembroToEdit] = useState<TeamMember | null>(null);
+  const [bannerActivoInput, setBannerActivoInput] = useState(banner.bannerActivo);
+  const [bannerTextoInput, setBannerTextoInput] = useState(banner.bannerTexto);
+
+  useEffect(() => {
+    setBannerActivoInput(banner.bannerActivo);
+    setBannerTextoInput(banner.bannerTexto);
+  }, [banner]);
+
+  const handleSaveBanner = () => {
+    onUpdateBanner({ bannerActivo: bannerActivoInput, bannerTexto: bannerTextoInput });
+  };
   const [userSearch, setUserSearch] = useState('');
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docFileType, setDocFileType] = useState<ExtractedFileType | null>(null);
@@ -287,25 +332,157 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setShowMiembroForm(false);
   };
 
+  // 2f. Edit News Form Setup
+  const {
+    register: regEditNews,
+    handleSubmit: handleSubEditNews,
+    formState: { errors: errorsEditNews },
+    reset: resetEditNews
+  } = useForm({ resolver: zodResolver(newsSchema) });
+
+  const openEditNews = (item: NewsItem) => {
+    setNewsToEdit(item);
+    resetEditNews({ title: item.title, description: item.description, content: item.content, image: item.image });
+  };
+
+  const onSubmitEditNews = (data: any) => {
+    if (!newsToEdit) return;
+    onUpdateNews(newsToEdit.id, data);
+    setNewsToEdit(null);
+  };
+
+  // 2g. Edit Evento Form Setup
+  const {
+    register: regEditEvento,
+    handleSubmit: handleSubEditEvento,
+    formState: { errors: errorsEditEvento },
+    reset: resetEditEvento
+  } = useForm({ resolver: zodResolver(eventoSchema) });
+
+  const openEditEvento = (item: EventItem) => {
+    setEventoToEdit(item);
+    resetEditEvento({
+      titulo: item.title,
+      descripcion: item.description,
+      fecha: item.fechaISO ? item.fechaISO.slice(0, 16) : '',
+      tipo: item.tipo || ''
+    });
+  };
+
+  const onSubmitEditEvento = (data: any) => {
+    if (!eventoToEdit) return;
+    onUpdateEvento(eventoToEdit.id, data);
+    setEventoToEdit(null);
+  };
+
+  // 2h. Edit Miembro Form Setup
+  const {
+    register: regEditMiembro,
+    handleSubmit: handleSubEditMiembro,
+    formState: { errors: errorsEditMiembro },
+    reset: resetEditMiembro
+  } = useForm({ resolver: zodResolver(miembroSchema) });
+
+  const openEditMiembro = (member: TeamMember) => {
+    setMiembroToEdit(member);
+    resetEditMiembro({ nombre: member.name, cargo: member.role, foto: member.photo, orden: member.orden ?? 0 });
+  };
+
+  const onSubmitEditMiembro = (data: any) => {
+    if (!miembroToEdit) return;
+    onUpdateMiembro(miembroToEdit.id, data);
+    setMiembroToEdit(null);
+  };
+
   const filteredUsers = users.filter(u =>
     u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
     u.name.toLowerCase().includes(userSearch.toLowerCase())
   );
 
   // 3. Update Bono Sales local handler
+  const allBonoCourses = BONO_COURSE_GROUPS.flatMap(g => g.cursos);
   const [bonoSalesInputs, setBonoSalesInputs] = useState<{ [key: string]: number }>(
-    bonoInfo.courseSales.reduce((acc, curr) => ({ ...acc, [curr.course]: curr.sales }), {})
+    allBonoCourses.reduce((acc, course) => {
+      const existing = bonoInfo.courseSales.find(cs => cs.course === course);
+      return { ...acc, [course]: existing?.sales ?? 0 };
+    }, {})
   );
+
+  // Keep pre-loaded values in sync with Firestore, without clobbering fields the admin is mid-edit on
+  const [dirtyBonoFields, setDirtyBonoFields] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setBonoSalesInputs(prev => {
+      const next = { ...prev };
+      allBonoCourses.forEach(course => {
+        if (dirtyBonoFields.has(course)) return;
+        const existing = bonoInfo.courseSales.find(cs => cs.course === course);
+        next[course] = existing?.sales ?? 0;
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bonoInfo]);
 
   const handleSaleChange = (course: string, val: string) => {
     const num = parseInt(val) || 0;
     setBonoSalesInputs(prev => ({ ...prev, [course]: num }));
+    setDirtyBonoFields(prev => new Set(prev).add(course));
+  };
+
+  const clearDirty = (course: string) => {
+    setDirtyBonoFields(prev => {
+      const next = new Set(prev);
+      next.delete(course);
+      return next;
+    });
   };
 
   const handleSaveBonoSales = (course: string) => {
     const sales = bonoSalesInputs[course] || 0;
     onUpdateBonoSales(course, sales);
-    onShowToast(`Bono actualizado para ${course}`, 'success');
+    clearDirty(course);
+    onShowToast('Ventas actualizadas correctamente', 'success');
+  };
+
+  const handleSaveAllBono = () => {
+    allBonoCourses.forEach(course => {
+      onUpdateBonoSales(course, bonoSalesInputs[course] || 0);
+    });
+    setDirtyBonoFields(new Set());
+    onShowToast('Ventas actualizadas correctamente', 'success');
+  };
+
+  // Fecha de Sorteo (Admin view)
+  const [fechaSorteoInput, setFechaSorteoInput] = useState(
+    bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 16) : ''
+  );
+
+  useEffect(() => {
+    setFechaSorteoInput(bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 16) : '');
+  }, [bonoInfo.drawDate]);
+
+  const handleSaveFechaSorteo = () => {
+    if (!fechaSorteoInput) return;
+    onUpdateFechaSorteo(new Date(fechaSorteoInput).toISOString());
+  };
+
+  // Premios (Admin view)
+  const [showPremioForm, setShowPremioForm] = useState(false);
+  const {
+    register: regPremio,
+    handleSubmit: handleSubPremio,
+    reset: resetPremio,
+    formState: { errors: errorsPremio }
+  } = useForm({
+    resolver: zodResolver(premioSchema),
+    defaultValues: { title: '', description: '', image: '' }
+  });
+
+  const onSubmitPremio = (data: any) => {
+    onAddPremio(data);
+    resetPremio();
+    setShowPremioForm(false);
   };
 
   const percentRaised = Math.min(Math.round((bonoInfo.totalRaised / bonoInfo.goal) * 100), 100);
@@ -514,7 +691,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* TAB 3: PUBLISH NEWS */}
         {activeTab === 'news' && (
           <div id="admin-news-view" className="flex flex-col gap-4 animate-fade-in">
+
+            {/* Banner Destacado */}
             <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1">
+              Banner Destacado
+            </h4>
+            <div className="flex flex-col gap-3 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">
+                  {bannerActivoInput ? 'Banner activo' : 'Banner desactivado'}
+                </span>
+                <button
+                  id="btn-toggle-banner-activo"
+                  onClick={() => setBannerActivoInput(prev => !prev)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    bannerActivoInput ? 'bg-[#CC0000]' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      bannerActivoInput ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Mensaje del banner</label>
+                <textarea
+                  id="banner-texto-input"
+                  rows={3}
+                  value={bannerTextoInput}
+                  onChange={(e) => setBannerTextoInput(e.target.value)}
+                  placeholder="Escribí el mensaje que verán los alumnos en Inicio..."
+                  className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] focus:bg-white transition-colors resize-none shadow-sm placeholder-gray-400"
+                />
+              </div>
+
+              <button
+                id="btn-save-banner"
+                onClick={handleSaveBanner}
+                className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <Save className="w-4 h-4" />
+                Guardar
+              </button>
+            </div>
+
+            <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1 mt-2">
               Redactar y Publicar Noticia
             </h4>
 
@@ -608,52 +832,214 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
 
             </form>
+
+            {/* Published News List */}
+            <div className="flex flex-col gap-2.5 mt-2">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1">
+                Noticias Publicadas
+              </h4>
+
+              {news.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-6">No hay noticias publicadas todavía.</p>
+              ) : (
+                news.map((item) => (
+                  <div
+                    key={item.id}
+                    id={`admin-news-card-${item.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-bold leading-tight truncate text-neutral-800">{item.title}</span>
+                      <span className="text-[9px] font-mono text-gray-400">{item.date}</span>
+                    </div>
+                    <button
+                      id={`btn-edit-news-${item.id}`}
+                      onClick={() => openEditNews(item)}
+                      title="Editar noticia"
+                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-neutral-800 transition-colors cursor-pointer shrink-0 border border-gray-100 shadow-sm text-[10px] font-bold"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Editar
+                    </button>
+                    <button
+                      id={`btn-delete-news-${item.id}`}
+                      onClick={() => setNewsToDelete(item)}
+                      title="Eliminar noticia"
+                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-red-50 hover:bg-[#CC0000] text-[#CC0000] hover:text-white transition-colors cursor-pointer shrink-0 border border-red-100/50 shadow-sm text-[10px] font-bold"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Eliminar
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 
         {/* TAB 4: UPDATE BONO SALES */}
         {activeTab === 'bono' && (
           <div id="admin-bono-view" className="flex flex-col gap-4 animate-fade-in">
+
+            {/* Fecha de Sorteo */}
             <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1">
-              Rendición de Ventas por División
+              Fecha del Sorteo
+            </h4>
+            <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+              <input
+                id="input-fecha-sorteo"
+                type="datetime-local"
+                value={fechaSorteoInput}
+                onChange={(e) => setFechaSorteoInput(e.target.value)}
+                className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
+              />
+              <button
+                id="btn-save-fecha-sorteo"
+                onClick={handleSaveFechaSorteo}
+                disabled={!fechaSorteoInput}
+                className="p-2.5 rounded-xl bg-red-50 hover:bg-[#CC0000] disabled:opacity-40 disabled:cursor-not-allowed text-[#CC0000] hover:text-white transition-colors cursor-pointer border border-red-100/50 shrink-0 shadow-sm"
+                title="Guardar fecha"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Premios */}
+            <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-1 mt-2">
+              <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest">
+                Premios del Sorteo
+              </h4>
+              <button
+                id="btn-toggle-premio-form"
+                onClick={() => {
+                  if (showPremioForm) resetPremio();
+                  setShowPremioForm(prev => !prev);
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#CC0000] hover:underline cursor-pointer"
+              >
+                {showPremioForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {showPremioForm ? 'Cancelar' : 'Agregar premio'}
+              </button>
+            </div>
+
+            {showPremioForm && (
+              <form onSubmit={handleSubPremio(onSubmitPremio)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre del premio</label>
+                  <input
+                    id="premio-title-input"
+                    type="text"
+                    placeholder="Ej: Smart TV 43&quot; Full HD"
+                    {...regPremio('title')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsPremio.title && <span className="text-[10px] text-[#CC0000] font-bold">{errorsPremio.title.message}</span>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                  <textarea
+                    id="premio-description-input"
+                    rows={3}
+                    placeholder="Detalles del premio..."
+                    {...regPremio('description')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm placeholder-gray-400"
+                  />
+                  {errorsPremio.description && <span className="text-[10px] text-[#CC0000] font-bold">{errorsPremio.description.message}</span>}
+                </div>
+
+                {/* TODO: reemplazar por upload directo de archivo cuando se configure Firebase Storage */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">URL de imagen (por ahora)</label>
+                  <input
+                    id="premio-image-input"
+                    type="text"
+                    placeholder="https://..."
+                    {...regPremio('image')}
+                    className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
+                  />
+                  {errorsPremio.image && <span className="text-[10px] text-[#CC0000] font-bold">{errorsPremio.image.message}</span>}
+                </div>
+
+                <button
+                  id="btn-premio-submit"
+                  type="submit"
+                  className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <Gift className="w-4 h-4" />
+                  Guardar Premio
+                </button>
+              </form>
+            )}
+
+            {bonoInfo.prizes.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">No hay premios cargados todavía.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {bonoInfo.prizes.map((prize) => (
+                  <div
+                    key={prize.id}
+                    id={`admin-premio-card-${prize.id}`}
+                    className="bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  >
+                    <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-gray-100 bg-gray-50">
+                      <img src={prize.image} alt={prize.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-bold leading-tight truncate text-neutral-800">{prize.title}</span>
+                      <span className="text-[9px] text-gray-400 truncate">{prize.description}</span>
+                    </div>
+                    <button
+                      id={`btn-delete-premio-${prize.id}`}
+                      onClick={() => onDeletePremio(prize.id)}
+                      title="Eliminar premio"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Ventas por Curso */}
+            <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1 mt-2">
+              Rendición de Ventas por Curso
             </h4>
             <p className="text-[11px] text-gray-400 pl-1 leading-relaxed">
-              Ingresá el monto total recaudado en pesos ($) de forma acumulada para cada curso de la escuela. Esto actualiza la barra del Home y el Leaderboard de premios.
+              Ingresá el monto total recaudado en pesos ($) de forma acumulada para cada curso del IJA. Esto actualiza la barra del Home y el Leaderboard de premios.
             </p>
 
-            <div className="flex flex-col gap-2.5 mt-1">
-              {bonoInfo.courseSales.map((salesItem) => {
-                const currentVal = bonoSalesInputs[salesItem.course] !== undefined 
-                  ? bonoSalesInputs[salesItem.course] 
-                  : salesItem.sales;
+            {BONO_COURSE_GROUPS.map((group) => (
+              <div key={group.ciclo} className="flex flex-col gap-2.5 mt-1">
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-gray-400 pl-1">
+                  {group.ciclo}
+                </span>
 
-                return (
+                {group.cursos.map((course) => (
                   <div
-                    key={salesItem.course}
+                    key={course}
                     className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm"
                   >
                     <div className="flex-1 flex flex-col gap-0.5 pl-1">
-                      <span className="text-xs font-bold text-neutral-800 leading-tight">{salesItem.course}</span>
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        Actual: ${salesItem.sales.toLocaleString('es-AR')}
-                      </span>
+                      <span className="text-xs font-bold text-neutral-800 leading-tight">{course}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <div className="relative max-w-[120px]">
                         <span className="absolute left-2.5 top-2.5 text-xs text-gray-400 font-extrabold">$</span>
                         <input
-                          id={`input-sales-${salesItem.course.replace(/\s+/g, '-')}`}
+                          id={`input-sales-${course.replace(/\s+/g, '-')}`}
                           type="number"
-                          value={currentVal || ''}
-                          onChange={(e) => handleSaleChange(salesItem.course, e.target.value)}
+                          value={bonoSalesInputs[course] || ''}
+                          onChange={(e) => handleSaleChange(course, e.target.value)}
                           className="bg-gray-50 border border-gray-100 rounded-xl pl-6 pr-2 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none w-full shadow-inner"
                         />
                       </div>
-                      
+
                       <button
-                        id={`btn-save-sales-${salesItem.course.replace(/\s+/g, '-')}`}
-                        onClick={() => handleSaveBonoSales(salesItem.course)}
+                        id={`btn-save-sales-${course.replace(/\s+/g, '-')}`}
+                        onClick={() => handleSaveBonoSales(course)}
                         className="p-2.5 rounded-xl bg-red-50 hover:bg-[#CC0000] text-[#CC0000] hover:text-white transition-colors cursor-pointer border border-red-100/50 shrink-0 shadow-sm"
                         title="Guardar"
                       >
@@ -661,9 +1047,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ))}
+
+            <button
+              id="btn-save-all-bono"
+              onClick={handleSaveAllBono}
+              className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer mt-2 shadow-sm"
+            >
+              <Save className="w-4 h-4" />
+              Guardar todo
+            </button>
           </div>
         )}
 
@@ -1215,8 +1610,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <span className="text-[9px] font-mono text-gray-400">{evt.date} • {evt.time} • {evt.location}</span>
                     </div>
                     <button
+                      id={`btn-edit-evento-${evt.id}`}
+                      onClick={() => openEditEvento(evt)}
+                      title="Editar evento"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
                       id={`btn-delete-evento-${evt.id}`}
-                      onClick={() => onDeleteEvento(evt.id)}
+                      onClick={() => setEventoToDelete(evt)}
                       title="Eliminar evento"
                       className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
                     >
@@ -1327,8 +1730,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <span className="text-[9px] font-mono text-gray-400 truncate">{member.role}</span>
                     </div>
                     <button
+                      id={`btn-edit-miembro-${member.id}`}
+                      onClick={() => openEditMiembro(member)}
+                      title="Editar integrante"
+                      className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer shrink-0 border border-gray-100"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
                       id={`btn-delete-miembro-${member.id}`}
-                      onClick={() => onDeleteMiembro(member.id)}
+                      onClick={() => setMiembroToDelete(member)}
                       title="Eliminar integrante"
                       className="p-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-[#CC0000] transition-colors cursor-pointer shrink-0 border border-gray-100"
                     >
@@ -1348,6 +1759,339 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onImportUsers={onImportUsers}
           onClose={() => setShowImportDialog(false)}
         />
+      )}
+
+      {/* DELETE CONFIRMATION: Noticia */}
+      {newsToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4 shadow-2xl animate-zoom-in">
+            <h3 className="text-sm font-extrabold text-neutral-900">¿Estás seguro que querés eliminar esta noticia?</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">Esta acción no se puede deshacer.</p>
+            <div className="flex gap-3 justify-end mt-1">
+              <button
+                id="btn-cancel-delete-news"
+                onClick={() => setNewsToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-delete-news"
+                onClick={() => {
+                  onDeleteNews(newsToDelete.id);
+                  setNewsToDelete(null);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT: Noticia */}
+      {newsToEdit && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-md rounded-2xl max-h-[90vh] overflow-y-auto flex flex-col text-neutral-800 shadow-2xl animate-zoom-in">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-base font-black text-neutral-900">Editar Noticia</h3>
+              <button
+                id="btn-close-edit-news"
+                onClick={() => setNewsToEdit(null)}
+                className="text-gray-400 hover:text-white p-1 bg-gray-100 hover:bg-[#CC0000] rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubEditNews(onSubmitEditNews)} className="p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                <input
+                  id="edit-news-title-input"
+                  type="text"
+                  {...regEditNews('title')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditNews.title && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditNews.title.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Resumen</label>
+                <input
+                  id="edit-news-desc-input"
+                  type="text"
+                  {...regEditNews('description')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditNews.description && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditNews.description.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Contenido</label>
+                <textarea
+                  id="edit-news-content-textarea"
+                  rows={5}
+                  {...regEditNews('content')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm"
+                />
+                {errorsEditNews.content && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditNews.content.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">URL de imagen</label>
+                <input
+                  id="edit-news-image-input"
+                  type="text"
+                  {...regEditNews('image')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditNews.image && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditNews.image.message}</span>}
+              </div>
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button
+                  id="btn-cancel-edit-news"
+                  type="button"
+                  onClick={() => setNewsToEdit(null)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  id="btn-save-edit-news"
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION: Evento */}
+      {eventoToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4 shadow-2xl animate-zoom-in">
+            <h3 className="text-sm font-extrabold text-neutral-900">¿Eliminar este evento?</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">Esta acción no se puede deshacer.</p>
+            <div className="flex gap-3 justify-end mt-1">
+              <button
+                id="btn-cancel-delete-evento"
+                onClick={() => setEventoToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-delete-evento"
+                onClick={() => {
+                  onDeleteEvento(eventoToDelete.id);
+                  setEventoToDelete(null);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT: Evento */}
+      {eventoToEdit && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-md rounded-2xl max-h-[90vh] overflow-y-auto flex flex-col text-neutral-800 shadow-2xl animate-zoom-in">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-base font-black text-neutral-900">Editar Evento</h3>
+              <button
+                id="btn-close-edit-evento"
+                onClick={() => setEventoToEdit(null)}
+                className="text-gray-400 hover:text-white p-1 bg-gray-100 hover:bg-[#CC0000] rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubEditEvento(onSubmitEditEvento)} className="p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                <input
+                  id="edit-evento-titulo-input"
+                  type="text"
+                  {...regEditEvento('titulo')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditEvento.titulo && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditEvento.titulo.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                <textarea
+                  id="edit-evento-descripcion-input"
+                  rows={3}
+                  {...regEditEvento('descripcion')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm"
+                />
+                {errorsEditEvento.descripcion && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditEvento.descripcion.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Fecha y hora</label>
+                <input
+                  id="edit-evento-fecha-input"
+                  type="datetime-local"
+                  {...regEditEvento('fecha')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditEvento.fecha && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditEvento.fecha.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Tipo</label>
+                <select
+                  id="edit-evento-tipo-select"
+                  {...regEditEvento('tipo')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] shadow-sm cursor-pointer"
+                >
+                  <option value="Asamblea">Asamblea</option>
+                  <option value="Torneo">Torneo Deportivo</option>
+                  <option value="Charla">Charla / Taller</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button
+                  id="btn-cancel-edit-evento"
+                  type="button"
+                  onClick={() => setEventoToEdit(null)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  id="btn-save-edit-evento"
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION: Miembro */}
+      {miembroToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4 shadow-2xl animate-zoom-in">
+            <h3 className="text-sm font-extrabold text-neutral-900">¿Eliminar a este integrante?</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">Esta acción no se puede deshacer.</p>
+            <div className="flex gap-3 justify-end mt-1">
+              <button
+                id="btn-cancel-delete-miembro"
+                onClick={() => setMiembroToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-delete-miembro"
+                onClick={() => {
+                  onDeleteMiembro(miembroToDelete.id);
+                  setMiembroToDelete(null);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT: Miembro */}
+      {miembroToEdit && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white border border-gray-100 w-full max-w-md rounded-2xl max-h-[90vh] overflow-y-auto flex flex-col text-neutral-800 shadow-2xl animate-zoom-in">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-base font-black text-neutral-900">Editar Integrante</h3>
+              <button
+                id="btn-close-edit-miembro"
+                onClick={() => setMiembroToEdit(null)}
+                className="text-gray-400 hover:text-white p-1 bg-gray-100 hover:bg-[#CC0000] rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubEditMiembro(onSubmitEditMiembro)} className="p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre y apellido</label>
+                <input
+                  id="edit-miembro-nombre-input"
+                  type="text"
+                  {...regEditMiembro('nombre')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditMiembro.nombre && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditMiembro.nombre.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Cargo</label>
+                <input
+                  id="edit-miembro-cargo-input"
+                  type="text"
+                  {...regEditMiembro('cargo')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditMiembro.cargo && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditMiembro.cargo.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">URL de foto</label>
+                <input
+                  id="edit-miembro-foto-input"
+                  type="text"
+                  {...regEditMiembro('foto')}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditMiembro.foto && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditMiembro.foto.message}</span>}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Orden de aparición</label>
+                <input
+                  id="edit-miembro-orden-input"
+                  type="number"
+                  {...regEditMiembro('orden', { valueAsNumber: true })}
+                  className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
+                />
+                {errorsEditMiembro.orden && <span className="text-[10px] text-[#CC0000] font-bold">{errorsEditMiembro.orden.message}</span>}
+              </div>
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button
+                  id="btn-cancel-edit-miembro"
+                  type="button"
+                  onClick={() => setMiembroToEdit(null)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-400 hover:text-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  id="btn-save-edit-miembro"
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-[#CC0000] hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_2px_8px_rgba(204,0,0,0.2)] cursor-pointer"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,23 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NewsItem } from '../types';
+import { BannerConfig } from '../lib/firestore';
 import { Megaphone, X, Calendar, ArrowRight } from 'lucide-react';
 
 interface InicioScreenProps {
   news: NewsItem[];
+  banner: BannerConfig | null;
   onOpenNews: (item: NewsItem) => void;
 }
 
-export const InicioScreen: React.FC<InicioScreenProps> = ({ news, onOpenNews }) => {
-  const [showBanner, setShowBanner] = useState(true);
+export const InicioScreen: React.FC<InicioScreenProps> = ({ news, banner, onOpenNews }) => {
+  const [dismissed, setDismissed] = useState(false);
+
+  // Reset the session dismissal if the admin publishes a new banner message
+  useEffect(() => {
+    setDismissed(false);
+  }, [banner?.bannerTexto]);
 
   const featuredItem = news.find(n => n.featured) || news[0];
   const regularNews = news.filter(n => !n.featured || n.id !== featuredItem?.id);
+
+  const showBanner = !!banner?.bannerActivo && !dismissed;
 
   return (
     <div id="inicio-screen-container" className="flex flex-col gap-5 p-4 animate-fade-in overflow-y-auto max-h-[calc(100vh-140px)]">
       {/* Dismissible Promoted/Featured Banner - Styled according to Sleek Interface */}
       {showBanner && (
-        <div 
+        <div
           id="featured-banner-dismissible"
           className="relative bg-white border border-gray-100 p-3.5 rounded-2xl flex items-start gap-3 shadow-[0_2px_12px_rgba(0,0,0,0.03)] transition-all duration-300"
         >
@@ -26,12 +35,12 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ news, onOpenNews }) 
           </span>
           <div className="flex-1 pr-4">
             <p className="text-[11px] text-neutral-800 font-bold leading-normal">
-              ¡Bono Contribución disponible! Sortea un Smart TV 43" y más premios. Solicitá tu talonario a tu delegado de curso. Todo recaudado va para el sonido.
+              {banner!.bannerTexto}
             </p>
           </div>
           <button
             id="btn-close-banner"
-            onClick={() => setShowBanner(false)}
+            onClick={() => setDismissed(true)}
             className="text-gray-400 hover:text-[#CC0000] transition-colors self-start p-0.5 absolute top-3 right-3"
             title="Cerrar anuncio"
           >

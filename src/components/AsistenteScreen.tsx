@@ -1,14 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
-import { getAssistantReply } from '../data';
+import { ChatMessage, DocItem } from '../types';
+import { askBoomerang } from '../lib/gemini';
 import { Bot, Send } from 'lucide-react';
 
-export const AsistenteScreen: React.FC = () => {
+interface AsistenteScreenProps {
+  documentos: DocItem[];
+}
+
+export const AsistenteScreen: React.FC<AsistenteScreenProps> = ({ documentos }) => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'msg-init',
       sender: 'bot',
-      text: '¡Hola! Soy el Asistente Virtual Boomerang 🪃. Estoy para ayudarte con cualquier duda sobre el Centro de Estudiantes del IJA. ¿Querés saber sobre el bono contribución, cómo proponer ideas o la Estudiantina 2026?',
+      text: '¡Hola! Soy Boomerang 🪃, el asistente del Centro de Estudiantes del IJA. Conozco los reglamentos del colegio, los proyectos y actividades del centro, el CEC y tus derechos como estudiante. ¿En qué te puedo ayudar?',
       timestamp: 'Ahora'
     }
   ]);
@@ -20,7 +24,7 @@ export const AsistenteScreen: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isTyping]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim()) return;
 
@@ -36,15 +40,8 @@ export const AsistenteScreen: React.FC = () => {
     setUserInput('');
     setIsTyping(true);
 
-    // TODO: al conectar Gemini, pasar como contexto
-    // todos los documentos con estado activo=true
-    // de Firestore. El prompt base será:
-    // "Sos el asistente oficial del Centro de
-    // Estudiantes Boomerang del Instituto Jóvenes
-    // Argentinos. Respondé SOLO basándote en los
-    // siguientes documentos oficiales: {documentos}"
-    setTimeout(() => {
-      const replyText = getAssistantReply(originalInput);
+    try {
+      const replyText = await askBoomerang(originalInput, documentos);
       const botMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         sender: 'bot',
@@ -52,8 +49,17 @@ export const AsistenteScreen: React.FC = () => {
         timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
       };
       setChatMessages(prev => [...prev, botMsg]);
+    } catch {
+      const errorMsg: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        sender: 'bot',
+        text: 'Lo siento, no pude procesar tu pregunta. Intentá de nuevo en unos segundos.',
+        timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+      };
+      setChatMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   return (
@@ -103,7 +109,8 @@ export const AsistenteScreen: React.FC = () => {
 
         {isTyping && (
           <div id="bot-typing-indicator" className="flex flex-col max-w-[80%] gap-1 self-start items-start">
-            <div className="bg-white text-gray-400 rounded-2xl rounded-tl-none border border-gray-100 p-3 px-4 flex items-center gap-1 shadow-sm">
+            <div className="bg-white text-gray-400 rounded-2xl rounded-tl-none border border-gray-100 p-3 px-4 flex items-center gap-2 shadow-sm">
+              <span className="text-[11px] font-medium">Escribiendo...</span>
               <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />

@@ -84,6 +84,9 @@ export interface EventItem {
   time: string;
   location: string;
   description: string;
+  /** Raw ISO datetime + category, kept for admin editing (not shown in the public UI) */
+  fechaISO?: string;
+  tipo?: string;
 }
 
 export interface TeamMember {
@@ -91,6 +94,8 @@ export interface TeamMember {
   name: string;
   role: string;
   photo: string;
+  /** Sort order, kept for admin editing (not shown in the public UI) */
+  orden?: number;
 }
 
 export interface ChatMessage {
