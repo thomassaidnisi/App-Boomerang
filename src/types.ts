@@ -61,6 +61,8 @@ export interface CourseSale {
 export interface BonoInfo {
   totalRaised: number;
   goal: number;
+  valorNumero: number;
+  objetivo: string;
   drawDate: string;
   prizes: Prize[];
   courseSales: CourseSale[];

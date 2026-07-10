@@ -25,7 +25,7 @@ interface AdminPanelProps {
   onDeleteNews: (id: string) => void;
   onUpdateBanner: (data: BannerConfig) => void;
   onUpdateBonoSales: (course: string, sales: number) => void;
-  onUpdateFechaSorteo: (fecha: string) => void;
+  onUpdateBonoConfig: (data: { totalMeta: number; valorNumero: number; objetivo: string; fechaSorteo: string }) => void;
   onAddPremio: (premio: { title: string; description: string; image: string }) => void;
   onDeletePremio: (id: string) => void;
   onCreateVote: (question: string, options: string[], expiresDays: number) => void;
@@ -48,50 +48,62 @@ type AdminSubTab = 'stats' | 'proposals' | 'news' | 'bono' | 'vote' | 'docs' | '
 
 const COURSE_OPTIONS = ['1°A', '1°B', '2°A', '2°B', '3°A', '3°B', '4°A', '4°B', '5°A', '5°B', '6°A', '6°B'];
 
-// Zod schemas for forms
+// Character limits (shared between zod validation and the on-screen counters)
+const NEWS_TITLE_MAX = 100;
+const NEWS_DESCRIPTION_MAX = 150;
+const NEWS_CONTENT_MAX = 1000;
+const DOC_TITLE_MAX = 80;
+const VOTE_QUESTION_MAX = 150;
+const EVENTO_TITULO_MAX = 100;
+const EVENTO_DESCRIPCION_MAX = 300;
+const PREMIO_TITLE_MAX = 80;
+const PREMIO_DESCRIPTION_MAX = 200;
+const BANNER_TEXTO_MAX = 200;
+
+// Zod schemas for forms — only required (non-empty) + max length, no minimum lengths
 const newsSchema = z.object({
-  title: z.string().min(5, 'Mínimo 5 caracteres').max(45, 'Máximo 45 caracteres'),
-  description: z.string().min(10, 'Mínimo 10 caracteres').max(150, 'Máximo 150 caracteres'),
-  content: z.string().min(20, 'Mínimo 20 caracteres'),
+  title: z.string().min(1, 'Requerido').max(NEWS_TITLE_MAX, `Máximo ${NEWS_TITLE_MAX} caracteres`),
+  description: z.string().min(1, 'Requerido').max(NEWS_DESCRIPTION_MAX, `Máximo ${NEWS_DESCRIPTION_MAX} caracteres`),
+  content: z.string().min(1, 'Requerido').max(NEWS_CONTENT_MAX, `Máximo ${NEWS_CONTENT_MAX} caracteres`),
   image: z.string().url('Ingresá una URL de imagen válida (ej: Unsplash)'),
 });
 
 const docSchema = z.object({
-  title: z.string().min(5, 'Mínimo 5 caracteres').max(80, 'Máximo 80 caracteres'),
+  title: z.string().min(1, 'Requerido').max(DOC_TITLE_MAX, `Máximo ${DOC_TITLE_MAX} caracteres`),
 });
 
 const userSchema = z.object({
   email: z.string().email('Ingresá un email válido'),
-  name: z.string().min(3, 'Mínimo 3 caracteres'),
+  name: z.string().min(1, 'Requerido'),
   role: z.enum(['Estudiante', 'Docente', 'Admin']),
   course: z.string().optional(),
 });
 
 const voteSchema = z.object({
-  question: z.string().min(8, 'La pregunta debe tener al menos 8 caracteres'),
+  question: z.string().min(1, 'Requerido').max(VOTE_QUESTION_MAX, `Máximo ${VOTE_QUESTION_MAX} caracteres`),
   options: z.array(z.object({
-    text: z.string().min(2, 'Opción requerida')
+    text: z.string().min(1, 'Requerido')
   })).min(2, 'Mínimo 2 opciones').max(4, 'Máximo 4 opciones'),
   expiresDays: z.number().min(1, 'Mínimo 1 día').max(30, 'Máximo 30 días'),
 });
 
 const eventoSchema = z.object({
-  titulo: z.string().min(5, 'Mínimo 5 caracteres').max(80, 'Máximo 80 caracteres'),
-  descripcion: z.string().min(10, 'Mínimo 10 caracteres').max(300, 'Máximo 300 caracteres'),
+  titulo: z.string().min(1, 'Requerido').max(EVENTO_TITULO_MAX, `Máximo ${EVENTO_TITULO_MAX} caracteres`),
+  descripcion: z.string().min(1, 'Requerido').max(EVENTO_DESCRIPCION_MAX, `Máximo ${EVENTO_DESCRIPCION_MAX} caracteres`),
   fecha: z.string().min(1, 'Seleccioná fecha y hora'),
   tipo: z.string().min(1, 'Requerido'),
 });
 
 const miembroSchema = z.object({
-  nombre: z.string().min(3, 'Mínimo 3 caracteres'),
-  cargo: z.string().min(3, 'Mínimo 3 caracteres'),
+  nombre: z.string().min(1, 'Requerido'),
+  cargo: z.string().min(1, 'Requerido'),
   foto: z.string().url('Ingresá una URL de imagen válida'),
   orden: z.number().min(0, 'Mínimo 0'),
 });
 
 const premioSchema = z.object({
-  title: z.string().min(3, 'Mínimo 3 caracteres').max(80, 'Máximo 80 caracteres'),
-  description: z.string().min(10, 'Mínimo 10 caracteres').max(200, 'Máximo 200 caracteres'),
+  title: z.string().min(1, 'Requerido').max(PREMIO_TITLE_MAX, `Máximo ${PREMIO_TITLE_MAX} caracteres`),
+  description: z.string().min(1, 'Requerido').max(PREMIO_DESCRIPTION_MAX, `Máximo ${PREMIO_DESCRIPTION_MAX} caracteres`),
   // TODO: por ahora se carga por URL; habilitar subida directa de archivos
   // cuando se configure Firebase Storage para el proyecto
   image: z.string().url('Ingresá una URL de imagen válida'),
@@ -113,7 +125,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onDeleteNews,
   onUpdateBanner,
   onUpdateBonoSales,
-  onUpdateFechaSorteo,
+  onUpdateBonoConfig,
   onAddPremio,
   onDeletePremio,
   onCreateVote,
@@ -169,6 +181,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     register: regNews,
     handleSubmit: handleSubNews,
     reset: resetNews,
+    watch: watchNews,
     formState: { errors: errorsNews }
   } = useForm({
     resolver: zodResolver(newsSchema),
@@ -179,6 +192,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=600'
     }
   });
+
+  const newsTitleValue = watchNews('title') || '';
+  const newsDescriptionValue = watchNews('description') || '';
+  const newsContentValue = watchNews('content') || '';
 
   const onSubmitNews = (data: any) => {
     onPublishNews({
@@ -197,6 +214,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     control: controlVote,
     handleSubmit: handleSubVote,
     reset: resetVote,
+    watch: watchVote,
     formState: { errors: errorsVote }
   } = useForm({
     resolver: zodResolver(voteSchema),
@@ -206,6 +224,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       expiresDays: 7
     }
   });
+
+  const voteQuestionValue = watchVote('question') || '';
 
   const { fields, append, remove } = useFieldArray({
     control: controlVote,
@@ -303,11 +323,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     register: regEvento,
     handleSubmit: handleSubEvento,
     reset: resetEvento,
+    watch: watchEvento,
     formState: { errors: errorsEvento }
   } = useForm({
     resolver: zodResolver(eventoSchema),
     defaultValues: { titulo: '', descripcion: '', fecha: '', tipo: 'Asamblea' }
   });
+
+  const eventoTituloValue = watchEvento('titulo') || '';
+  const eventoDescripcionValue = watchEvento('descripcion') || '';
 
   const onSubmitEvento = (data: any) => {
     onCreateEvento(data);
@@ -337,8 +361,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     register: regEditNews,
     handleSubmit: handleSubEditNews,
     formState: { errors: errorsEditNews },
-    reset: resetEditNews
+    reset: resetEditNews,
+    watch: watchEditNews
   } = useForm({ resolver: zodResolver(newsSchema) });
+
+  const editNewsTitleValue = watchEditNews('title') || '';
+  const editNewsDescriptionValue = watchEditNews('description') || '';
+  const editNewsContentValue = watchEditNews('content') || '';
 
   const openEditNews = (item: NewsItem) => {
     setNewsToEdit(item);
@@ -356,8 +385,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     register: regEditEvento,
     handleSubmit: handleSubEditEvento,
     formState: { errors: errorsEditEvento },
-    reset: resetEditEvento
+    reset: resetEditEvento,
+    watch: watchEditEvento
   } = useForm({ resolver: zodResolver(eventoSchema) });
+
+  const editEventoTituloValue = watchEditEvento('titulo') || '';
+  const editEventoDescripcionValue = watchEditEvento('descripcion') || '';
 
   const openEditEvento = (item: EventItem) => {
     setEventoToEdit(item);
@@ -453,18 +486,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     onShowToast('Ventas actualizadas correctamente', 'success');
   };
 
-  // Fecha de Sorteo (Admin view)
+  // Configuración General del Bono (Admin view)
+  const [totalMetaInput, setTotalMetaInput] = useState(bonoInfo.goal);
+  const [valorNumeroInput, setValorNumeroInput] = useState(bonoInfo.valorNumero);
+  const [objetivoInput, setObjetivoInput] = useState(bonoInfo.objetivo);
   const [fechaSorteoInput, setFechaSorteoInput] = useState(
-    bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 16) : ''
+    bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 10) : ''
   );
 
   useEffect(() => {
-    setFechaSorteoInput(bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 16) : '');
-  }, [bonoInfo.drawDate]);
+    setTotalMetaInput(bonoInfo.goal);
+    setValorNumeroInput(bonoInfo.valorNumero);
+    setObjetivoInput(bonoInfo.objetivo);
+    setFechaSorteoInput(bonoInfo.drawDate ? bonoInfo.drawDate.slice(0, 10) : '');
+  }, [bonoInfo.goal, bonoInfo.valorNumero, bonoInfo.objetivo, bonoInfo.drawDate]);
 
-  const handleSaveFechaSorteo = () => {
-    if (!fechaSorteoInput) return;
-    onUpdateFechaSorteo(new Date(fechaSorteoInput).toISOString());
+  const handleSaveBonoConfig = () => {
+    onUpdateBonoConfig({
+      totalMeta: totalMetaInput,
+      valorNumero: valorNumeroInput,
+      objetivo: objetivoInput,
+      fechaSorteo: fechaSorteoInput ? new Date(fechaSorteoInput).toISOString() : bonoInfo.drawDate,
+    });
   };
 
   // Premios (Admin view)
@@ -473,11 +516,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     register: regPremio,
     handleSubmit: handleSubPremio,
     reset: resetPremio,
+    watch: watchPremio,
     formState: { errors: errorsPremio }
   } = useForm({
     resolver: zodResolver(premioSchema),
     defaultValues: { title: '', description: '', image: '' }
   });
+
+  const premioTitleValue = watchPremio('title') || '';
+  const premioDescriptionValue = watchPremio('description') || '';
 
   const onSubmitPremio = (data: any) => {
     onAddPremio(data);
@@ -717,10 +764,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Mensaje del banner</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Mensaje del banner</label>
+                  <span className="text-[9px] font-mono text-gray-400">{bannerTextoInput.length}/{BANNER_TEXTO_MAX}</span>
+                </div>
                 <textarea
                   id="banner-texto-input"
                   rows={3}
+                  maxLength={BANNER_TEXTO_MAX}
                   value={bannerTextoInput}
                   onChange={(e) => setBannerTextoInput(e.target.value)}
                   placeholder="Escribí el mensaje que verán los alumnos en Inicio..."
@@ -731,7 +782,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <button
                 id="btn-save-banner"
                 onClick={handleSaveBanner}
-                className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                disabled={!bannerTextoInput.trim()}
+                className="bg-[#CC0000] hover:bg-red-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
               >
                 <Save className="w-4 h-4" />
                 Guardar
@@ -746,11 +798,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               
               {/* Title */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título de la noticia</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título de la noticia</label>
+                  <span className="text-[9px] font-mono text-gray-400">{newsTitleValue.length}/{NEWS_TITLE_MAX}</span>
+                </div>
                 <input
                   id="news-title-input"
                   type="text"
                   placeholder="Ej: Gran Éxito del Buffet Saludable..."
+                  maxLength={NEWS_TITLE_MAX}
                   {...regNews('title')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
                 />
@@ -761,11 +817,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Short description */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Resumen / Bajada de título</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Resumen / Bajada de título</label>
+                  <span className="text-[9px] font-mono text-gray-400">{newsDescriptionValue.length}/{NEWS_DESCRIPTION_MAX}</span>
+                </div>
                 <input
                   id="news-desc-input"
                   type="text"
                   placeholder="Un breve resumen de una sola línea que verán los alumnos..."
+                  maxLength={NEWS_DESCRIPTION_MAX}
                   {...regNews('description')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
                 />
@@ -776,11 +836,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Full Content */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Contenido de la noticia</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Contenido de la noticia</label>
+                  <span className="text-[9px] font-mono text-gray-400">{newsContentValue.length}/{NEWS_CONTENT_MAX}</span>
+                </div>
                 <textarea
                   id="news-content-textarea"
                   rows={5}
                   placeholder="Escribí los párrafos completos de la noticia..."
+                  maxLength={NEWS_CONTENT_MAX}
                   {...regNews('content')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm placeholder-gray-400"
                 />
@@ -881,26 +945,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {activeTab === 'bono' && (
           <div id="admin-bono-view" className="flex flex-col gap-4 animate-fade-in">
 
-            {/* Fecha de Sorteo */}
+            {/* Configuración General del Bono */}
             <h4 className="text-[10px] font-extrabold uppercase text-[#CC0000] tracking-widest border-b border-gray-100 pb-2 mb-1">
-              Fecha del Sorteo
+              Configuración del Bono
             </h4>
-            <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
-              <input
-                id="input-fecha-sorteo"
-                type="datetime-local"
-                value={fechaSorteoInput}
-                onChange={(e) => setFechaSorteoInput(e.target.value)}
-                className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
-              />
+            <div className="flex flex-col gap-3 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Meta de recaudación ($)</label>
+                <input
+                  id="input-total-meta"
+                  type="number"
+                  value={totalMetaInput || ''}
+                  onChange={(e) => setTotalMetaInput(parseInt(e.target.value) || 0)}
+                  className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Valor del número ($)</label>
+                <input
+                  id="input-valor-numero"
+                  type="number"
+                  value={valorNumeroInput || ''}
+                  onChange={(e) => setValorNumeroInput(parseInt(e.target.value) || 0)}
+                  className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Objetivo / descripción</label>
+                <input
+                  id="input-objetivo"
+                  type="text"
+                  placeholder="Ej: Equipo de sonido"
+                  value={objetivoInput}
+                  onChange={(e) => setObjetivoInput(e.target.value)}
+                  className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Fecha del sorteo</label>
+                <input
+                  id="input-fecha-sorteo"
+                  type="date"
+                  value={fechaSorteoInput}
+                  onChange={(e) => setFechaSorteoInput(e.target.value)}
+                  className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 focus:bg-white focus:outline-none shadow-inner"
+                />
+              </div>
+
               <button
-                id="btn-save-fecha-sorteo"
-                onClick={handleSaveFechaSorteo}
-                disabled={!fechaSorteoInput}
-                className="p-2.5 rounded-xl bg-red-50 hover:bg-[#CC0000] disabled:opacity-40 disabled:cursor-not-allowed text-[#CC0000] hover:text-white transition-colors cursor-pointer border border-red-100/50 shrink-0 shadow-sm"
-                title="Guardar fecha"
+                id="btn-save-bono-config"
+                onClick={handleSaveBonoConfig}
+                className="bg-[#CC0000] hover:bg-red-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer mt-1 shadow-sm"
               >
-                <Check className="w-4 h-4" />
+                <Save className="w-4 h-4" />
+                Guardar configuración
               </button>
             </div>
 
@@ -925,11 +1026,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {showPremioForm && (
               <form onSubmit={handleSubPremio(onSubmitPremio)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre del premio</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Nombre del premio</label>
+                    <span className="text-[9px] font-mono text-gray-400">{premioTitleValue.length}/{PREMIO_TITLE_MAX}</span>
+                  </div>
                   <input
                     id="premio-title-input"
                     type="text"
                     placeholder="Ej: Smart TV 43&quot; Full HD"
+                    maxLength={PREMIO_TITLE_MAX}
                     {...regPremio('title')}
                     className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
                   />
@@ -937,11 +1042,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                    <span className="text-[9px] font-mono text-gray-400">{premioDescriptionValue.length}/{PREMIO_DESCRIPTION_MAX}</span>
+                  </div>
                   <textarea
                     id="premio-description-input"
                     rows={3}
                     placeholder="Detalles del premio..."
+                    maxLength={PREMIO_DESCRIPTION_MAX}
                     {...regPremio('description')}
                     className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm placeholder-gray-400"
                   />
@@ -1073,11 +1182,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               
               {/* Question */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Pregunta del plebiscito</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Pregunta del plebiscito</label>
+                  <span className="text-[9px] font-mono text-gray-400">{voteQuestionValue.length}/{VOTE_QUESTION_MAX}</span>
+                </div>
                 <input
                   id="vote-question-input"
                   type="text"
                   placeholder="Ej: ¿Qué nombre le ponemos a la radio del colegio?"
+                  maxLength={VOTE_QUESTION_MAX}
                   {...regVote('question')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
                 />
@@ -1536,11 +1649,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {showEventoForm && (
               <form onSubmit={handleSubEvento(onSubmitEvento)} className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                    <span className="text-[9px] font-mono text-gray-400">{eventoTituloValue.length}/{EVENTO_TITULO_MAX}</span>
+                  </div>
                   <input
                     id="evento-titulo-input"
                     type="text"
                     placeholder="Ej: Torneo Fútsal - Fecha 1"
+                    maxLength={EVENTO_TITULO_MAX}
                     {...regEvento('titulo')}
                     className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm placeholder-gray-400"
                   />
@@ -1548,11 +1665,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                    <span className="text-[9px] font-mono text-gray-400">{eventoDescripcionValue.length}/{EVENTO_DESCRIPCION_MAX}</span>
+                  </div>
                   <textarea
                     id="evento-descripcion-input"
                     rows={3}
                     placeholder="Detalles del evento..."
+                    maxLength={EVENTO_DESCRIPCION_MAX}
                     {...regEvento('descripcion')}
                     className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm placeholder-gray-400"
                   />
@@ -1806,10 +1927,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
             <form onSubmit={handleSubEditNews(onSubmitEditNews)} className="p-5 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                  <span className="text-[9px] font-mono text-gray-400">{editNewsTitleValue.length}/{NEWS_TITLE_MAX}</span>
+                </div>
                 <input
                   id="edit-news-title-input"
                   type="text"
+                  maxLength={NEWS_TITLE_MAX}
                   {...regEditNews('title')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
                 />
@@ -1817,10 +1942,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Resumen</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Resumen</label>
+                  <span className="text-[9px] font-mono text-gray-400">{editNewsDescriptionValue.length}/{NEWS_DESCRIPTION_MAX}</span>
+                </div>
                 <input
                   id="edit-news-desc-input"
                   type="text"
+                  maxLength={NEWS_DESCRIPTION_MAX}
                   {...regEditNews('description')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
                 />
@@ -1828,10 +1957,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Contenido</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Contenido</label>
+                  <span className="text-[9px] font-mono text-gray-400">{editNewsContentValue.length}/{NEWS_CONTENT_MAX}</span>
+                </div>
                 <textarea
                   id="edit-news-content-textarea"
                   rows={5}
+                  maxLength={NEWS_CONTENT_MAX}
                   {...regEditNews('content')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm"
                 />
@@ -1916,10 +2049,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
             <form onSubmit={handleSubEditEvento(onSubmitEditEvento)} className="p-5 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Título</label>
+                  <span className="text-[9px] font-mono text-gray-400">{editEventoTituloValue.length}/{EVENTO_TITULO_MAX}</span>
+                </div>
                 <input
                   id="edit-evento-titulo-input"
                   type="text"
+                  maxLength={EVENTO_TITULO_MAX}
                   {...regEditEvento('titulo')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors shadow-sm"
                 />
@@ -1927,10 +2064,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Descripción</label>
+                  <span className="text-[9px] font-mono text-gray-400">{editEventoDescripcionValue.length}/{EVENTO_DESCRIPCION_MAX}</span>
+                </div>
                 <textarea
                   id="edit-evento-descripcion-input"
                   rows={3}
+                  maxLength={EVENTO_DESCRIPCION_MAX}
                   {...regEditEvento('descripcion')}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] transition-colors resize-none shadow-sm"
                 />

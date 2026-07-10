@@ -111,7 +111,7 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
             <span className="text-[10px] font-extrabold tracking-wider text-red-200 uppercase whitespace-nowrap">RECAUDACIÓN EN VIVO</span>
           </div>
           <span className="inline-flex items-center gap-1 bg-[#CC0000] text-white text-[9px] font-extrabold px-2 py-1 rounded-full uppercase tracking-wider leading-snug text-left">
-            Objetivo: Equipo de Sonido
+            Objetivo: {bonoInfo.objetivo}
           </span>
         </div>
 
@@ -143,7 +143,7 @@ export const BonoScreen: React.FC<BonoScreenProps> = ({ bonoInfo }) => {
         <div className="grid grid-cols-2 gap-2 mt-1 border-t border-white/10 pt-3 text-center relative z-10">
           <div className="flex flex-col border-r border-white/15">
             <span className="text-[9px] text-red-200 font-bold uppercase tracking-wider">VALOR DEL NÚMERO</span>
-            <span className="text-sm font-bold font-mono text-white">$1.000 ARS</span>
+            <span className="text-sm font-bold font-mono text-white">{formatCurrency(bonoInfo.valorNumero)}</span>
           </div>
           <div className="flex flex-col">
             <span className="text-[9px] text-red-200 font-bold uppercase tracking-wider">FECHA DE SORTEO</span>

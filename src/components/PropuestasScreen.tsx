@@ -6,17 +6,19 @@ import { Proposal, ProposalStatus } from '../types';
 import { Plus, ThumbsUp, ThumbsDown, Filter, Calendar, User, MessageCircle, ChevronRight, X, Clock, HelpCircle, CheckCircle } from 'lucide-react';
 
 // Zod schema for proposal submission
+const PROPOSAL_TITLE_MAX = 100;
+const PROPOSAL_DESCRIPTION_MAX = 500;
+
 const proposalSchema = z.object({
   title: z.string()
-    .min(6, { message: 'El título debe tener al menos 6 caracteres' })
-    .max(50, { message: 'El título no puede superar los 50 caracteres' }),
+    .min(1, { message: 'Ingresá un título' })
+    .max(PROPOSAL_TITLE_MAX, { message: `El título no puede superar los ${PROPOSAL_TITLE_MAX} caracteres` }),
   description: z.string()
-    .min(15, { message: 'Explicá tu propuesta con más detalle (mínimo 15 caracteres)' })
-    .max(400, { message: 'La descripción no puede superar los 400 caracteres' }),
+    .min(1, { message: 'Ingresá una descripción' })
+    .max(PROPOSAL_DESCRIPTION_MAX, { message: `La descripción no puede superar los ${PROPOSAL_DESCRIPTION_MAX} caracteres` }),
   course: z.string().min(1, { message: 'Seleccioná tu curso' }),
   author: z.string()
-    .min(3, { message: 'Ingresá tu nombre o "Anónimo"' })
-    .max(30, { message: 'El nombre es demasiado largo' }),
+    .min(1, { message: 'Ingresá tu nombre o "Anónimo"' }),
 });
 
 type ProposalFormInput = z.infer<typeof proposalSchema>;
@@ -61,11 +63,12 @@ export const PropuestasScreen: React.FC<PropuestasScreenProps> = ({
   };
 
   // React Hook Form
-  const { 
-    register, 
-    handleSubmit, 
-    reset, 
-    formState: { errors } 
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors }
   } = useForm<ProposalFormInput>({
     resolver: zodResolver(proposalSchema),
     defaultValues: {
@@ -75,6 +78,9 @@ export const PropuestasScreen: React.FC<PropuestasScreenProps> = ({
       author: ''
     }
   });
+
+  const titleValue = watch('title') || '';
+  const descriptionValue = watch('description') || '';
 
   const onSubmitForm = (data: ProposalFormInput) => {
     onCreateProposal({
@@ -495,13 +501,17 @@ export const PropuestasScreen: React.FC<PropuestasScreenProps> = ({
 
               {/* Title */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
-                  Título de la propuesta
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                    Título de la propuesta
+                  </label>
+                  <span className="text-[9px] font-mono text-gray-400">{titleValue.length}/{PROPOSAL_TITLE_MAX}</span>
+                </div>
                 <input
                   id="input-title"
                   type="text"
                   placeholder="Ej: Dispensers de agua fría/calor..."
+                  maxLength={PROPOSAL_TITLE_MAX}
                   {...register('title')}
                   className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] focus:ring-1 focus:ring-[#CC0000]/20 transition-colors shadow-sm"
                 />
@@ -512,13 +522,17 @@ export const PropuestasScreen: React.FC<PropuestasScreenProps> = ({
 
               {/* Description */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
-                  Descripción detallada
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                    Descripción detallada
+                  </label>
+                  <span className="text-[9px] font-mono text-gray-400">{descriptionValue.length}/{PROPOSAL_DESCRIPTION_MAX}</span>
+                </div>
                 <textarea
                   id="textarea-description"
                   rows={4}
                   placeholder="Escribí de qué se trata la propuesta, qué problema soluciona y cómo la llevarías a cabo..."
+                  maxLength={PROPOSAL_DESCRIPTION_MAX}
                   {...register('description')}
                   className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-[#CC0000] focus:ring-1 focus:ring-[#CC0000]/20 transition-colors resize-none shadow-sm"
                 />

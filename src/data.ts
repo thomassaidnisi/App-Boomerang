@@ -194,6 +194,8 @@ export const initialVotes: Vote[] = [
 export const initialBono: BonoInfo = {
   totalRaised: 415000,
   goal: 650000,
+  valorNumero: 1000,
+  objetivo: 'Equipo de Sonido',
   drawDate: '2026-08-14T20:00:00-03:00',
   prizes: [
     {

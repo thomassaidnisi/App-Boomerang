@@ -25,7 +25,7 @@ import {
   getBono,
   subscribeBono,
   updateVentasCurso,
-  updateFechaSorteo,
+  updateBonoConfig,
   addPremio,
   deletePremio,
   subscribeEventos,
@@ -366,12 +366,12 @@ export default function App() {
     }
   };
 
-  const handleUpdateFechaSorteo = async (fecha: string) => {
+  const handleUpdateBonoConfig = async (data: { totalMeta: number; valorNumero: number; objetivo: string; fechaSorteo: string }) => {
     try {
-      await updateFechaSorteo(fecha);
-      showToast('Fecha de sorteo actualizada correctamente', 'success');
+      await updateBonoConfig(data);
+      showToast('Configuración del bono actualizada correctamente', 'success');
     } catch {
-      showToast('No se pudo actualizar la fecha de sorteo. Intentá de nuevo.', 'error');
+      showToast('No se pudo actualizar la configuración del bono. Intentá de nuevo.', 'error');
     }
   };
 
@@ -553,12 +553,12 @@ export default function App() {
   return (
     <div
       id="app-root-backdrop"
-      className="min-h-screen bg-gray-100 text-[#1A1A1A] flex items-center justify-center p-0 sm:p-4 font-sans overflow-x-hidden selection:bg-[#CC0000] selection:text-white"
+      className="min-h-dvh bg-gray-100 text-[#1A1A1A] flex items-center justify-center p-0 sm:p-4 font-sans overflow-x-hidden selection:bg-[#CC0000] selection:text-white"
     >
         {/* Center Container: Single mobile screen viewport */}
         <div
           id="app-container-shell"
-          className="w-full max-w-[390px] mx-auto bg-white sm:rounded-[40px] sm:border-[8px] sm:border-[#1A1A1A] shadow-[0_24px_50px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col h-screen sm:h-[840px] relative font-sans shrink-0 border-neutral-100 transition-all duration-300"
+          className="w-full mx-auto bg-white sm:rounded-[40px] sm:border-[8px] sm:border-[#1A1A1A] shadow-[0_24px_50px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col h-dvh sm:h-[840px] relative font-sans shrink-0 border-neutral-100 transition-all duration-300"
         >
           {/* Mock phone status bar - dark text to match Sleek Interface */}
           <div className="hidden sm:flex justify-between items-center px-6 pt-3 pb-1 bg-white text-[#1A1A1A] border-b border-gray-100 select-none shrink-0">
@@ -703,7 +703,7 @@ export default function App() {
                   onUpdateNews={handleUpdateNews}
                   onDeleteNews={handleDeleteNews}
                   onUpdateBonoSales={handleUpdateBonoSales}
-                  onUpdateFechaSorteo={handleUpdateFechaSorteo}
+                  onUpdateBonoConfig={handleUpdateBonoConfig}
                   onAddPremio={handleAddPremio}
                   onDeletePremio={handleDeletePremio}
                   onUpdateBanner={handleUpdateBanner}

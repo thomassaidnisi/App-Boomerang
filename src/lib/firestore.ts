@@ -201,12 +201,17 @@ export async function getUsuariosAutorizados(): Promise<AuthorizedUser[]> {
 }
 
 export async function addUsuarioAutorizado(data: Omit<AuthorizedUser, 'id' | 'active'>): Promise<string> {
-  const ref = await addDoc(usuariosAutorizadosCol, { ...data, active: true });
+  // Firestore rejects `undefined` field values (e.g. course is undefined for non-Estudiante roles)
+  const payload = Object.fromEntries(
+    Object.entries({ ...data, active: true }).filter(([, value]) => value !== undefined)
+  );
+  const ref = await addDoc(usuariosAutorizadosCol, payload);
   return ref.id;
 }
 
 export async function updateUsuarioAutorizado(id: string, data: Partial<AuthorizedUser>): Promise<void> {
-  await updateDoc(doc(db, 'usuarios_autorizados', id), data);
+  const payload = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+  await updateDoc(doc(db, 'usuarios_autorizados', id), payload);
 }
 
 export async function deleteUsuarioAutorizado(id: string): Promise<void> {
@@ -254,11 +259,21 @@ const bonoVentasCol = collection(db, 'bono', 'config', 'ventas');
 
 const slugCurso = (curso: string) => curso.replace(/\s+/g, '_').replace(/[°]/g, '');
 
+interface BonoConfigDoc {
+  totalMeta: number;
+  valorNumero: number;
+  objetivo: string;
+  fechaSorteo: string;
+  premios: BonoInfo['prizes'];
+}
+
 async function seedBonoIfMissing(): Promise<void> {
   const configSnap = await getDoc(bonoConfigRef);
   if (!configSnap.exists()) {
     await updateBonoConfigInternal({
       totalMeta: initialBono.goal,
+      valorNumero: initialBono.valorNumero,
+      objetivo: initialBono.objetivo,
       fechaSorteo: initialBono.drawDate,
       premios: initialBono.prizes,
     });
@@ -274,11 +289,7 @@ async function seedBonoIfMissing(): Promise<void> {
   }
 }
 
-async function updateBonoConfigInternal(data: {
-  totalMeta: number;
-  fechaSorteo: string;
-  premios: BonoInfo['prizes'];
-}): Promise<void> {
+async function updateBonoConfigInternal(data: BonoConfigDoc): Promise<void> {
   await setDoc(bonoConfigRef, data, { merge: true });
 }
 
@@ -286,7 +297,7 @@ export async function getBono(): Promise<BonoInfo> {
   await seedBonoIfMissing();
 
   const [configSnap, ventasSnap] = await Promise.all([getDoc(bonoConfigRef), getDocs(bonoVentasCol)]);
-  const config = configSnap.data() as { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] };
+  const config = configSnap.data() as BonoConfigDoc;
   const courseSales: CourseSale[] = ventasSnap.docs.map((d) => {
     const v = d.data();
     return { course: v.curso, sales: v.cantidad };
@@ -295,6 +306,8 @@ export async function getBono(): Promise<BonoInfo> {
   return {
     totalRaised: courseSales.reduce((acc, c) => acc + c.sales, 0),
     goal: config.totalMeta,
+    valorNumero: config.valorNumero,
+    objetivo: config.objetivo,
     drawDate: config.fechaSorteo,
     prizes: config.premios,
     courseSales,
@@ -302,7 +315,7 @@ export async function getBono(): Promise<BonoInfo> {
 }
 
 export function subscribeBono(onChange: (info: BonoInfo) => void): Unsubscribe {
-  let latestConfig: { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] } | null = null;
+  let latestConfig: BonoConfigDoc | null = null;
   let latestVentas: CourseSale[] = [];
 
   const emit = () => {
@@ -310,6 +323,8 @@ export function subscribeBono(onChange: (info: BonoInfo) => void): Unsubscribe {
     onChange({
       totalRaised: latestVentas.reduce((acc, c) => acc + c.sales, 0),
       goal: latestConfig.totalMeta,
+      valorNumero: latestConfig.valorNumero,
+      objetivo: latestConfig.objetivo,
       drawDate: latestConfig.fechaSorteo,
       prizes: latestConfig.premios,
       courseSales: latestVentas,
@@ -318,7 +333,7 @@ export function subscribeBono(onChange: (info: BonoInfo) => void): Unsubscribe {
 
   const unsubConfig = onSnapshot(bonoConfigRef, (snap) => {
     if (snap.exists()) {
-      latestConfig = snap.data() as { totalMeta: number; fechaSorteo: string; premios: BonoInfo['prizes'] };
+      latestConfig = snap.data() as BonoConfigDoc;
       emit();
     }
   });
@@ -342,8 +357,13 @@ export async function updateVentasCurso(curso: string, cantidad: number): Promis
   await setDoc(ventaRef, { curso, division: '', cantidad }, { merge: true });
 }
 
-export async function updateFechaSorteo(fechaSorteo: string): Promise<void> {
-  await updateDoc(bonoConfigRef, { fechaSorteo });
+export async function updateBonoConfig(data: {
+  totalMeta: number;
+  valorNumero: number;
+  objetivo: string;
+  fechaSorteo: string;
+}): Promise<void> {
+  await updateDoc(bonoConfigRef, data);
 }
 
 export async function addPremio(premio: Omit<BonoInfo['prizes'][number], 'id'>): Promise<void> {
